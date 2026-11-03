@@ -3,7 +3,7 @@ name: Umbra iOS (IPA)
 # Takes upstream Ghostgram at a pinned commit, applies patches/umbra-ios.patch (rename to Umbra + new
 # features) and builds an IPA. It is signed with Telegram's fake profile, so re-sign it with your own
 # Apple ID (Sideloadly / AltStore) before installing.
-# Secrets: TG_API_ID, TG_API_HASH (https://my.telegram.org). Without them the app builds but cannot log in.
+# Secrets: TG_API_ID, TG_API_HASH (https://my.telegram.org). The build stops at once if they are missing.
 
 on:
   workflow_dispatch:
@@ -22,6 +22,16 @@ jobs:
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
+      - name: Check Telegram API secrets
+        env:
+          TG_API_ID: ${{ secrets.TG_API_ID }}
+          TG_API_HASH: ${{ secrets.TG_API_HASH }}
+        run: |
+          if [ -z "$TG_API_ID" ] || [ -z "$TG_API_HASH" ]; then
+            echo "::error::Add repository secrets TG_API_ID and TG_API_HASH (Settings > Secrets and variables > Actions). Get them at https://my.telegram.org"
+            exit 1
+          fi
+
 
       - name: Fetch Ghostgram and apply the Umbra patch
         run: |
@@ -59,8 +69,8 @@ jobs:
       - name: Write configuration
         working-directory: ghostgram
         env:
-          TG_API_ID: ${{ secrets.TG_API_ID || '0' }}
-          TG_API_HASH: ${{ secrets.TG_API_HASH || 'none' }}
+          TG_API_ID: ${{ secrets.TG_API_ID }}
+          TG_API_HASH: ${{ secrets.TG_API_HASH }}
         run: |
           python3 - <<'PY'
           import json, os

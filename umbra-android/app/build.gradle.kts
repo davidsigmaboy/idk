@@ -3,14 +3,14 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
-// Defaults = public credentials from official open-source Telegram Android (DrKLO/Telegram BuildVars).
-// Override via env/gradle.properties TG_API_ID / TG_API_HASH if you want your own from my.telegram.org.
+// Your own api_id / api_hash from https://my.telegram.org (env or gradle.properties: TG_API_ID, TG_API_HASH).
+// Never commit them and never reuse another app's credentials: Telegram limits or bans such clients.
 val tgApiId: String = (project.findProperty("TG_API_ID") as String?)
     ?: System.getenv("TG_API_ID")
-    ?: "4"
+    ?: "0"
 val tgApiHash: String = (project.findProperty("TG_API_HASH") as String?)
     ?: System.getenv("TG_API_HASH")
-    ?: "014b35b6184100b085b0d0572f9b5103"
+    ?: ""
 
 android {
     namespace = "app.umbra.client"
