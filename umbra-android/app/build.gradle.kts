@@ -3,9 +3,14 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
-// api_id / api_hash come from https://my.telegram.org (gradle.properties or env TG_API_ID / TG_API_HASH).
-val tgApiId: String = (project.findProperty("TG_API_ID") as String?) ?: System.getenv("TG_API_ID") ?: "0"
-val tgApiHash: String = (project.findProperty("TG_API_HASH") as String?) ?: System.getenv("TG_API_HASH") ?: ""
+// Defaults = public credentials from official open-source Telegram Android (DrKLO/Telegram BuildVars).
+// Override via env/gradle.properties TG_API_ID / TG_API_HASH if you want your own from my.telegram.org.
+val tgApiId: String = (project.findProperty("TG_API_ID") as String?)
+    ?: System.getenv("TG_API_ID")
+    ?: "4"
+val tgApiHash: String = (project.findProperty("TG_API_HASH") as String?)
+    ?: System.getenv("TG_API_HASH")
+    ?: "014b35b6184100b085b0d0572f9b5103"
 
 android {
     namespace = "app.umbra.client"
@@ -14,8 +19,8 @@ android {
         applicationId = "app.umbra.client"
         minSdk = 24
         targetSdk = 34
-        versionCode = 2
-        versionName = "1.1.0"
+        versionCode = 3
+        versionName = "1.2.0"
         buildConfigField("int", "TG_API_ID", tgApiId)
         buildConfigField("String", "TG_API_HASH", "\"$tgApiHash\"")
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
@@ -35,7 +40,7 @@ android {
             "META-INF/*.kotlin_module"
         )
     }
-    sourceSets["main"].java.srcDir("src/tdlib/java")   // TdApi.java + Client.java, produced by scripts/build-tdlib.sh
+    sourceSets["main"].java.srcDir("src/tdlib/java")
     sourceSets["main"].jniLibs.srcDir("src/tdlib/jniLibs")
 }
 
