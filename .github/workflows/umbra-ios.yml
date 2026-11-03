@@ -29,6 +29,10 @@ jobs:
           git checkout -q FETCH_HEAD
           git submodule update --init --recursive --depth 1 --jobs 8
           git apply --whitespace=nowarn ../patches/umbra-ios.patch
+          # The fake provisioning profiles shipped with Ghostgram expired on 2026-10-30; the IPA is
+          # re-signed with your own Apple ID anyway, so the expiry check is switched off.
+          sed -i 's/if expire and expire < datetime.datetime.now():/if False:/' build-system/bazel-rules/rules_apple/tools/plisttool/plisttool.py
+          grep -n "if False:" build-system/bazel-rules/rules_apple/tools/plisttool/plisttool.py
           cp -R ../umbra-android ./umbra-android
 
       - name: Select Xcode
