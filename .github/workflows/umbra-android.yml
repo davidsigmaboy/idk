@@ -11,16 +11,6 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
-      - name: Require Telegram API secrets
-        env:
-          TG_API_ID: ${{ secrets.TG_API_ID }}
-          TG_API_HASH: ${{ secrets.TG_API_HASH }}
-        run: |
-          if [ -z "$TG_API_ID" ] || [ -z "$TG_API_HASH" ] || [ "$TG_API_ID" = "0" ]; then
-            echo "::error::Add repository secrets TG_API_ID and TG_API_HASH (from https://my.telegram.org), then re-run."
-            exit 1
-          fi
-          echo "API secrets present (api_id length=${#TG_API_ID})"
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: 17 }
       - name: Tools for TDLib
@@ -38,6 +28,7 @@ jobs:
         with: { gradle-version: "8.7" }
       - name: Build APK
         env:
+          # Optional override; defaults are official public Telegram Android credentials
           TG_API_ID: ${{ secrets.TG_API_ID }}
           TG_API_HASH: ${{ secrets.TG_API_HASH }}
         run: gradle -p umbra-android --no-daemon :app:assembleDebug
