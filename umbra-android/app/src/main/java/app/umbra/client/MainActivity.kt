@@ -18,10 +18,12 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import org.drinkless.tdlib.TdApi
 
@@ -35,7 +37,7 @@ class MainActivity : ComponentActivity() {
             val dark = androidx.compose.foundation.isSystemInDarkTheme()
             MaterialTheme(colorScheme = if (dark) darkColorScheme() else lightColorScheme()) {
                 Surface(Modifier.fillMaxSize()) {
-                    App(prefs, repo)
+                    App(prefs, repo, activity = this@MainActivity)
                 }
             }
         }
@@ -49,7 +51,7 @@ private sealed interface Screen {
 }
 
 @Composable
-private fun App(prefs: Prefs, repo: Repo) {
+private fun App(prefs: Prefs, repo: Repo, activity: ComponentActivity) {
     val auth by Td.authState.collectAsState()
     when (val s = auth) {
         null, is TdApi.AuthorizationStateWaitTdlibParameters ->
@@ -79,10 +81,10 @@ private fun App(prefs: Prefs, repo: Repo) {
             }
 
         is TdApi.AuthorizationStateWaitEmailCode ->
-            LoginStep("Email code", KeyboardType.Number, secret = false) {
-                Td.call(TdApi.CheckAuthenticationEmailCode().apply {
-                    code = TdApi.EmailAddressAuthenticationCode().apply { this.code = it }
-                })
+            LoginStep("Email code", KeyboardType.Number, secret = false) { codeStr ->
+                val authCode = TdApi.EmailAddressAuthenticationCode()
+                authCode.code = codeStr
+                Td.call(TdApi.CheckAuthenticationEmailCode().apply { code = authCode })
             }
 
         is TdApi.AuthorizationStateWaitOtherDeviceConfirmation ->
@@ -112,7 +114,10 @@ private fun App(prefs: Prefs, repo: Repo) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
                     Text("Logged out", style = MaterialTheme.typography.headlineSmall)
                     Spacer(Modifier.height(16.dp))
-                    Button(onClick = { Td.start(androidx.compose.ui.platform.LocalContext.current) }) {
+                    Button(onClick = {
+                        // Restart TDLib client with a fresh session
+                        Td.start(activity)
+                    }) {
                         Text("Start again")
                     }
                 }
@@ -146,8 +151,11 @@ private fun LoginStep(
     ) {
         Text("Umbra", style = MaterialTheme.typography.headlineLarge)
         Spacer(Modifier.height(8.dp))
-        Text("Unofficial Telegram client", style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(
+            "Unofficial Telegram client",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
         Spacer(Modifier.height(24.dp))
         OutlinedTextField(
             value = value,
@@ -193,9 +201,15 @@ private fun RegistrationScreen() {
     Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center) {
         Text("Create account", style = MaterialTheme.typography.headlineMedium)
         Spacer(Modifier.height(16.dp))
-        OutlinedTextField(first, { first = it }, label = { Text("First name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(
+            first, { first = it }, label = { Text("First name") },
+            singleLine = true, modifier = Modifier.fillMaxWidth()
+        )
         Spacer(Modifier.height(8.dp))
-        OutlinedTextField(last, { last = it }, label = { Text("Last name (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(
+            last, { last = it }, label = { Text("Last name (optional)") },
+            singleLine = true, modifier = Modifier.fillMaxWidth()
+        )
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         Spacer(Modifier.height(16.dp))
         Button(
@@ -280,8 +294,11 @@ private fun ChatList(repo: Repo, onOpen: (ChatItem) -> Unit, onSettings: () -> U
                             else -> null
                         }
                         if (status != null) {
-                            Text(status, style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                status,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     }
                 },
@@ -297,14 +314,19 @@ private fun ChatList(repo: Repo, onOpen: (ChatItem) -> Unit, onSettings: () -> U
             loading -> Box(Modifier.fillMaxSize().padding(pad), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
-            error != null && chats.isEmpty() -> Box(Modifier.fillMaxSize().padding(pad), contentAlignment = Alignment.Center) {
+            error != null && chats.isEmpty() -> Box(
+                Modifier.fillMaxSize().padding(pad),
+                contentAlignment = Alignment.Center
+            ) {
                 Text(error!!, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(16.dp))
             }
             chats.isEmpty() -> Box(Modifier.fillMaxSize().padding(pad), contentAlignment = Alignment.Center) {
                 Text("No chats yet", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             else -> LazyColumn(Modifier.padding(pad)) {
-                error?.let { item { Text(it, Modifier.padding(16.dp), color = MaterialTheme.colorScheme.error) } }
+                error?.let {
+                    item { Text(it, Modifier.padding(16.dp), color = MaterialTheme.colorScheme.error) }
+                }
                 items(chats, key = { it.id }) { c ->
                     ListItem(
                         headlineContent = {
@@ -345,20 +367,11 @@ private fun ChatScreen(
 
     LaunchedEffect(chatId) {
         runCatching { Td.call(TdApi.OpenChat().apply { this.chatId = chatId }) }
-        suspend fun reload(fromId: Long = 0, append: Boolean = false) {
-            runCatching { repo.history(chatId, fromId) }
+        suspend fun reload() {
+            runCatching { repo.history(chatId) }
                 .onSuccess { batch ->
-                    if (append) {
-                        if (batch.isEmpty()) canLoadMore = false
-                        else {
-                            val existing = msgs.map { it.id }.toSet()
-                            val older = batch.filter { it.id !in existing }
-                            msgs = older + msgs
-                        }
-                    } else {
-                        msgs = batch
-                        canLoadMore = batch.size >= 30
-                    }
+                    msgs = batch
+                    canLoadMore = batch.size >= 30
                     val unread = batch.filter { !it.outgoing }.map { it.id }.toLongArray()
                     if (unread.isNotEmpty()) repo.markRead(chatId, unread)
                 }
@@ -369,7 +382,6 @@ private fun ChatScreen(
                 is TdApi.UpdateNewMessage -> if (u.message.chatId == chatId) reload()
                 is TdApi.UpdateDeleteMessages -> if (u.chatId == chatId) {
                     repo.onDeleted(u)
-                    // Mark as deleted in current list if keepDeleted is on
                     if (prefs.keepDeleted && u.isPermanent) {
                         msgs = msgs.map { m ->
                             if (m.id in u.messageIds) m.copy(deleted = true) else m
@@ -390,16 +402,16 @@ private fun ChatScreen(
         }
     }
 
-    // Load older when scrolled near the end (reverseLayout → high index = older)
-    LaunchedEffect(listState, msgs) {
+    // Load older messages when scrolled near the end (reverseLayout → high index = older)
+    LaunchedEffect(listState) {
         snapshotFlow {
             val info = listState.layoutInfo
             val lastVisible = info.visibleItemsInfo.lastOrNull()?.index ?: 0
-            lastVisible >= info.totalItemsCount - 3
+            lastVisible >= (info.totalItemsCount - 3).coerceAtLeast(0)
         }.collect { nearEnd ->
             if (nearEnd && canLoadMore && !loadingMore && msgs.isNotEmpty()) {
                 loadingMore = true
-                val oldest = msgs.firstOrNull()?.id ?: 0
+                val oldest = msgs.firstOrNull()?.id ?: 0L
                 runCatching { repo.history(chatId, fromMessageId = oldest) }
                     .onSuccess { batch ->
                         if (batch.isEmpty()) canLoadMore = false
@@ -572,8 +584,13 @@ private fun SettingsScreen(prefs: Prefs, onBack: () -> Unit) {
                 enabled = !loggingOut,
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
             ) {
-                if (loggingOut) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onError)
-                else Text("Log out")
+                if (loggingOut) {
+                    CircularProgressIndicator(
+                        Modifier.size(20.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onError
+                    )
+                } else Text("Log out")
             }
             Spacer(Modifier.height(8.dp))
             Text(
