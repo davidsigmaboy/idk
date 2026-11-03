@@ -25,7 +25,6 @@ object Td {
     private val _connectionState = MutableStateFlow<TdApi.ConnectionState?>(null)
     val connectionState = _connectionState.asStateFlow()
 
-    /** Human-readable last fatal / setup error (shown on the spinner screen). */
     private val _fatalError = MutableStateFlow<String?>(null)
     val fatalError = _fatalError.asStateFlow()
 
@@ -36,17 +35,6 @@ object Td {
         if (client != null) return
         appContext = context.applicationContext
         _fatalError.value = null
-
-        // Catch missing credentials early — otherwise TDLib stays on WaitTdlibParameters forever.
-        if (BuildConfig.TG_API_ID == 0 || BuildConfig.TG_API_HASH.isBlank() || BuildConfig.TG_API_HASH == "none") {
-            _fatalError.value =
-                "API keys missing.\n\n" +
-                "Set GitHub Secrets TG_API_ID and TG_API_HASH\n" +
-                "(from my.telegram.org), then rebuild the APK.\n\n" +
-                "Current api_id=${BuildConfig.TG_API_ID}"
-            Log.e(TAG, _fatalError.value!!)
-            return
-        }
 
         try {
             Client.execute(TdApi.SetLogVerbosityLevel().apply { newVerbosityLevel = 1 })
@@ -64,8 +52,7 @@ object Td {
         } catch (t: Throwable) {
             Log.e(TAG, "Failed to create TDLib client", t)
             _fatalError.value =
-                "Failed to start TDLib: ${t.message}\n\n" +
-                "Native libraries may be missing from the APK."
+                "Failed to start TDLib: ${t.message}\n\nNative libraries may be missing from the APK."
             client = null
         }
     }
@@ -85,7 +72,7 @@ object Td {
             }
             is TdApi.Error -> {
                 Log.e(TAG, "TDLib error update ${obj.code}: ${obj.message}")
-                _fatalError.value = "${obj.code}: ${obj.message}"
+                // Don't freeze the whole UI on transient errors
             }
         }
         updates.tryEmit(obj)
@@ -109,13 +96,12 @@ object Td {
         p.systemVersion = "Android ${android.os.Build.VERSION.RELEASE}"
         p.applicationVersion = BuildConfig.VERSION_NAME
 
-        Log.d(TAG, "SetTdlibParameters api_id=${p.apiId} db=${p.databaseDirectory}")
+        Log.d(TAG, "SetTdlibParameters api_id=${p.apiId}")
 
         client?.send(p) { result ->
             when (result) {
                 is TdApi.Ok -> {
                     Log.d(TAG, "SetTdlibParameters OK")
-                    // Tell TDLib the network is available so it proceeds.
                     client?.send(TdApi.SetOption().apply {
                         name = "online"
                         value = TdApi.OptionValueBoolean(true)
@@ -124,14 +110,13 @@ object Td {
                 }
                 is TdApi.Error -> {
                     Log.e(TAG, "SetTdlibParameters failed ${result.code}: ${result.message}")
-                    _fatalError.value = "SetTdlibParameters failed:\n${result.code}: ${result.message}"
+                    _fatalError.value = "${result.code}: ${result.message}"
                 }
                 else -> Log.w(TAG, "SetTdlibParameters unexpected: $result")
             }
         }
     }
 
-    /** Logs out and clears local TDLib databases. */
     suspend fun logout() {
         try {
             call(TdApi.LogOut())
