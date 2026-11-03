@@ -72,7 +72,7 @@ jobs:
             build \
             --configurationPath build-system/ghostgram-configuration.json \
             --codesigningInformationPath build-system/fake-codesigning \
-            --buildNumber "${GITHUB_RUN_NUMBER}" --configuration release_arm64 \
+            --buildNumber "${GITHUB_RUN_NUMBER}" --configuration debug_arm64 \
             --outputBuildArtifactsPath build-output/ipa
           mv build-output/ipa/Telegram.ipa build-output/ipa/Umbra.ipa
 
