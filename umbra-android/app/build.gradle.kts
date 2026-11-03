@@ -14,8 +14,8 @@ android {
         applicationId = "app.umbra.client"
         minSdk = 24
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.1.0"
         buildConfigField("int", "TG_API_ID", tgApiId)
         buildConfigField("String", "TG_API_HASH", "\"$tgApiHash\"")
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
@@ -27,6 +27,14 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
+    packaging {
+        jniLibs { useLegacyPackaging = true }
+        resources.excludes += setOf(
+            "META-INF/LICENSE*",
+            "META-INF/NOTICE*",
+            "META-INF/*.kotlin_module"
+        )
+    }
     sourceSets["main"].java.srcDir("src/tdlib/java")   // TdApi.java + Client.java, produced by scripts/build-tdlib.sh
     sourceSets["main"].jniLibs.srcDir("src/tdlib/jniLibs")
 }
