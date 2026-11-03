@@ -9,6 +9,9 @@ on:
   workflow_dispatch:
   push:
     branches: [ main ]
+    paths:
+      - "patches/**"
+      - ".github/workflows/umbra-ios.yml"
 
 env:
   GHOSTGRAM_SHA: df95ba566c5f25a8f36de2b703bf070ca97c54ba
