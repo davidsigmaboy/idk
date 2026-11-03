@@ -1,0 +1,37 @@
+name: Umbra Android (APK)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 17 }
+      - name: Tools for TDLib
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build php-cli gperf perl make
+      - name: Cache TDLib build
+        id: tdcache
+        uses: actions/cache@v4
+        with:
+          path: umbra-android/app/src/tdlib
+          key: tdlib-${{ hashFiles('umbra-android/scripts/build-tdlib.sh') }}
+      - name: Build TDLib
+        if: steps.tdcache.outputs.cache-hit != 'true'
+        run: ./umbra-android/scripts/build-tdlib.sh
+      - uses: gradle/actions/setup-gradle@v4
+        with: { gradle-version: "8.7" }
+      - name: Build APK
+        env:
+          TG_API_ID: ${{ secrets.TG_API_ID || '0' }}
+          TG_API_HASH: ${{ secrets.TG_API_HASH || 'none' }}
+        run: gradle -p umbra-android --no-daemon :app:assembleDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Umbra-apk
+          path: umbra-android/app/build/outputs/apk/debug/*.apk

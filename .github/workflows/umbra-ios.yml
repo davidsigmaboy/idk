@@ -1,0 +1,72 @@
+name: Umbra iOS (IPA)
+
+# Takes upstream Ghostgram at a pinned commit, applies patches/umbra-ios.patch (rename to Umbra + new
+# features) and builds an IPA. It is signed with Telegram's fake profile, so re-sign it with your own
+# Apple ID (Sideloadly / AltStore) before installing.
+# Secrets: TG_API_ID, TG_API_HASH (https://my.telegram.org). Without them the app builds but cannot log in.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+env:
+  GHOSTGRAM_SHA: df95ba566c5f25a8f36de2b703bf070ca97c54ba
+
+jobs:
+  ipa:
+    runs-on: macos-26
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch Ghostgram and apply the Umbra patch
+        run: |
+          mkdir ghostgram && cd ghostgram
+          git init -q
+          git remote add origin https://github.com/ichmagmaus111/ghostgram.git
+          git fetch --depth 1 origin "$GHOSTGRAM_SHA"
+          git checkout -q FETCH_HEAD
+          git submodule update --init --recursive --depth 1 --jobs 8
+          git apply --whitespace=nowarn ../patches/umbra-ios.patch
+          cp -R ../umbra-android ./umbra-android
+
+      - name: Select Xcode
+        working-directory: ghostgram
+        run: |
+          XCODE=$(python3 -c 'import json;print(json.load(open("versions.json"))["xcode"])')
+          sudo xcode-select -s "/Applications/Xcode_${XCODE}.app/Contents/Developer"
+
+      - name: Write configuration
+        working-directory: ghostgram
+        env:
+          TG_API_ID: ${{ secrets.TG_API_ID || '0' }}
+          TG_API_HASH: ${{ secrets.TG_API_HASH || 'none' }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          cfg = json.load(open("build-system/ghostgram-configuration.example.json"))
+          cfg.update({"bundle_id": "ph.telegra.Telegraph", "team_id": "C67CF9S4VU",
+                      "api_id": os.environ["TG_API_ID"], "api_hash": os.environ["TG_API_HASH"]})
+          json.dump(cfg, open("build-system/ghostgram-configuration.json", "w"), indent=2)
+          PY
+
+      - name: Build IPA
+        working-directory: ghostgram
+        run: |
+          mkdir -p build-output/ipa
+          python3 build-system/Make/ImportCertificates.py --path build-system/fake-codesigning/certs
+          build-system/GGXcodeConfig.sh
+          GG_PATCHES_ONLY=1 build-system/GGBuild.sh
+          python3 -u build-system/Make/Make.py --overrideXcodeVersion \
+            build \
+            --configurationPath build-system/ghostgram-configuration.json \
+            --codesigningInformationPath build-system/fake-codesigning \
+            --buildNumber "${GITHUB_RUN_NUMBER}" --configuration release_arm64 \
+            --outputBuildArtifactsPath build-output/ipa
+          mv build-output/ipa/Telegram.ipa build-output/ipa/Umbra.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Umbra-ipa
+          path: ghostgram/build-output/ipa/Umbra.ipa
