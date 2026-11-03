@@ -53,9 +53,40 @@ private sealed interface Screen {
 @Composable
 private fun App(prefs: Prefs, repo: Repo, activity: ComponentActivity) {
     val auth by Td.authState.collectAsState()
+    val fatal by Td.fatalError.collectAsState()
+
+    // Always surface setup errors instead of an infinite spinner.
+    if (fatal != null) {
+        Center {
+            Column(
+                Modifier.padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text("Umbra", style = MaterialTheme.typography.headlineLarge)
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    fatal!!,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+        }
+        return
+    }
+
     when (val s = auth) {
         null, is TdApi.AuthorizationStateWaitTdlibParameters ->
-            Center { CircularProgressIndicator() }
+            Center {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator()
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        "Starting Telegram…",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
 
         is TdApi.AuthorizationStateWaitPhoneNumber ->
             LoginStep("Phone number (+…)", KeyboardType.Phone, secret = false) {
@@ -115,7 +146,6 @@ private fun App(prefs: Prefs, repo: Repo, activity: ComponentActivity) {
                     Text("Logged out", style = MaterialTheme.typography.headlineSmall)
                     Spacer(Modifier.height(16.dp))
                     Button(onClick = {
-                        // Restart TDLib client with a fresh session
                         Td.start(activity)
                     }) {
                         Text("Start again")
@@ -402,7 +432,6 @@ private fun ChatScreen(
         }
     }
 
-    // Load older messages when scrolled near the end (reverseLayout → high index = older)
     LaunchedEffect(listState) {
         snapshotFlow {
             val info = listState.layoutInfo
