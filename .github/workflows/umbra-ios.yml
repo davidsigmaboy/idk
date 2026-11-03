@@ -44,6 +44,12 @@ jobs:
           PY
           cp -R ../umbra-android ./umbra-android
 
+      - name: Umbra icons and visible name
+        working-directory: ghostgram
+        run: |
+          unzip -oq ../branding/icons.zip -d .
+          python3 ../scripts/rebrand_text.py .
+
       - name: Select Xcode
         working-directory: ghostgram
         run: |
