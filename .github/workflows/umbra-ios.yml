@@ -6,12 +6,7 @@ name: Umbra iOS (IPA)
 # Secrets (in the Random environment): API_ID, API_HASH (https://my.telegram.org). The build stops at once if they are missing.
 
 on:
-  workflow_dispatch:
-  push:
-    branches: [ main ]
-    paths:
-      - "patches/**"
-      - ".github/workflows/umbra-ios.yml"
+  workflow_dispatch:   # manual only: a macOS minute counts as 10 minutes of the free quota
 
 env:
   GHOSTGRAM_SHA: df95ba566c5f25a8f36de2b703bf070ca97c54ba

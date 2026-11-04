@@ -1,9 +1,7 @@
 name: Umbra Android (APK)
 
 on:
-  workflow_dispatch:
-  push:
-    branches: [ main ]
+  workflow_dispatch:   # manual only
 
 jobs:
   apk:
