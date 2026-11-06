@@ -1,0 +1,30 @@
+from base_plugin import BasePlugin, HookResult, HookStrategy
+from ui.settings import Switch, Input
+
+__id__ = "word_block"
+__name__ = "Word block"
+__version__ = "0.1"
+
+
+class WordBlock(BasePlugin):
+    def on_plugin_load(self):
+        self.add_hook("TL_updateNewMessage")
+        self.add_on_send_message_hook(priority=5)
+
+    def create_settings(self):
+        return [Switch(key="enabled", text="Enabled", default=True), Input(key="words", text="Words", default="spam,casino")]
+
+    def _words(self):
+        return [w.strip().lower() for w in self.get_setting("words", "spam,casino").split(",") if w.strip()]
+
+    def on_update_hook(self, update_name, account, update):
+        if not self.get_setting("enabled", True):
+            return HookResult()
+        text = str(getattr(getattr(update, "message", None), "message", "")).lower()
+        if any(w in text for w in self._words()):
+            return HookResult(strategy=HookStrategy.CANCEL)
+        return HookResult()
+
+    def on_send_message_hook(self, account, params):
+        params.message = params.message.replace("  ", " ")
+        return HookResult(strategy=HookStrategy.MODIFY, params=params)

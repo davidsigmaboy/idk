@@ -1,0 +1,36 @@
+from base_plugin import BasePlugin, HookResult, HookStrategy
+from ui.settings import Header, Input, Text
+from typing import Any, List
+
+__id__ = "hello_world"
+__name__ = "Hello World"
+__description__ = "Replaces .hello <name> with a greeting"
+__author__ = "test"
+__version__ = "1.0"
+__app_version__ = ">=12.5.1"
+__sdk_version__ = ">=1.4.4.3"
+
+DEFAULT_TEMPLATE = "Hello, {name}!"
+
+
+class HelloPlugin(BasePlugin):
+    def on_plugin_load(self):
+        self.add_on_send_message_hook()
+
+    def create_settings(self) -> List[Any]:
+        return [Header(text="Hello"), Input(key="template", text="Template", default=DEFAULT_TEMPLATE),
+                Text(text="Use .hello <name>")]
+
+    def on_send_message_hook(self, account: int, params: Any) -> HookResult:
+        if not isinstance(getattr(params, "message", None), str):
+            return HookResult()
+        raw = params.message.strip()
+        if not raw.startswith(".hello"):
+            return HookResult()
+        parts = raw.split(" ", 1)
+        name = parts[1].strip() if len(parts) > 1 else ""
+        if not name:
+            params.message = "Usage: .hello <name>"
+        else:
+            params.message = self.get_setting("template", DEFAULT_TEMPLATE).format(name=name)
+        return HookResult(strategy=HookStrategy.MODIFY, params=params)
