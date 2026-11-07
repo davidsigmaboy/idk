@@ -60,7 +60,7 @@ fun ProfileScreen(userId: Long, title: String, onBack: () -> Unit) {
                     val local = Banners.prepare(context, uri)
                     banner = decode(local)            // shown at once; others see it when the upload is finished
                     Banners.setMine(local, myId)
-                    note = "Banner sent. Other Umbra users will see it in a minute."
+                    note = "Done: the photo is now in @${Banners.GROUP}. Other Umbra users will see it after they open your profile."
                 } catch (e: Exception) {
                     note = "Could not set the banner: ${e.message}"
                 } finally {

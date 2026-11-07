@@ -4,7 +4,13 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -86,6 +92,7 @@ object Banners {
             Td.call(TdApi.JoinChat().apply { this.chatId = chatId })   // posting needs membership; fails harmlessly if already a member
         } catch (_: Exception) {
         }
+        // The send below reports the real reason if joining did not work.
         val input = TdApi.InputPhoto().apply {
             photo = TdApi.InputFileLocal(localPath)
             addedStickerFileIds = intArrayOf()
@@ -96,10 +103,34 @@ object Banners {
             showCaptionAboveMedia = false
             hasSpoiler = false
         }
-        Td.call(TdApi.SendMessage().apply {
-            this.chatId = chatId
-            inputMessageContent = content
-        })
+        // SendMessage answers at once with a local message; a refusal (no right to post photos, slow mode,
+        // not a member…) arrives later as an update. Wait for the real result so errors are not lost.
+        val events = Channel<TdApi.Object>(Channel.UNLIMITED)
+        coroutineScope {
+            val watcher = launch(start = CoroutineStart.UNDISPATCHED) {
+                Td.updates.collect {
+                    if (it is TdApi.UpdateMessageSendSucceeded || it is TdApi.UpdateMessageSendFailed) events.trySend(it)
+                }
+            }
+            try {
+                val sent = Td.call(TdApi.SendMessage().apply {
+                    this.chatId = chatId
+                    inputMessageContent = content
+                })
+                withTimeout(120_000) {
+                    for (e in events) {
+                        if (e is TdApi.UpdateMessageSendFailed && e.oldMessageId == sent.id) {
+                            throw IllegalStateException("Telegram refused the photo: ${e.error.message}")
+                        }
+                        if (e is TdApi.UpdateMessageSendSucceeded && e.oldMessageId == sent.id) break
+                    }
+                }
+            } catch (e: TimeoutCancellationException) {
+                throw IllegalStateException("Telegram did not confirm the upload in 2 minutes (no network?)")
+            } finally {
+                watcher.cancel()
+            }
+        }
         cache.remove(myId)
     }
 

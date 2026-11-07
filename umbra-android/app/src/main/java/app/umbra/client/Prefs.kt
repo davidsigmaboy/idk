@@ -2,6 +2,8 @@ package app.umbra.client
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 
 /** Umbra feature switches, stored locally. */
 class Prefs(context: Context) {
@@ -36,4 +38,17 @@ class Prefs(context: Context) {
     var sendDelaySeconds: Int
         get() = sp.getInt("sendDelay", 0)
         set(v) = sp.edit().putInt("sendDelay", v).apply()
+
+    private val themeState = mutableStateOf(sp.getString("theme", Themes.NONE) ?: Themes.NONE)
+    private val amountState = mutableIntStateOf(sp.getInt("themeAmount", 50))
+
+    /** One of [Themes]; changes at once everywhere the app reads it in Compose. */
+    var theme: String
+        get() = themeState.value
+        set(v) { themeState.value = v; sp.edit().putString("theme", v).apply() }
+
+    /** 10..100: how much snow, rain or how many bubbles. */
+    var themeAmount: Int
+        get() = amountState.intValue
+        set(v) { amountState.intValue = v; sp.edit().putInt("themeAmount", v).apply() }
 }

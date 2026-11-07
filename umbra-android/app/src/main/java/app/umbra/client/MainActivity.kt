@@ -4,7 +4,10 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -35,9 +38,17 @@ class MainActivity : ComponentActivity() {
         val repo = Repo(prefs)
         setContent {
             val dark = androidx.compose.foundation.isSystemInDarkTheme()
-            MaterialTheme(colorScheme = if (dark) darkColorScheme() else lightColorScheme()) {
-                Surface(Modifier.fillMaxSize()) {
-                    App(prefs, repo, activity = this@MainActivity)
+            val msn = prefs.theme == Themes.MSN
+            MaterialTheme(colorScheme = if (msn) Themes.msnColors() else if (dark) darkColorScheme() else lightColorScheme()) {
+                Box(
+                    Modifier.fillMaxSize().then(
+                        if (msn) Modifier.background(Themes.msnBackground) else Modifier
+                    )
+                ) {
+                    Surface(Modifier.fillMaxSize(), color = if (msn) androidx.compose.ui.graphics.Color.Transparent else MaterialTheme.colorScheme.surface) {
+                        App(prefs, repo, activity = this@MainActivity)
+                    }
+                    ThemeOverlay(prefs.theme, prefs.themeAmount)
                 }
             }
         }
@@ -86,6 +97,7 @@ private fun App(prefs: Prefs, repo: Repo, activity: ComponentActivity) {
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    ConnectionHint()
                 }
             }
 
@@ -158,6 +170,28 @@ private fun App(prefs: Prefs, repo: Repo, activity: ComponentActivity) {
             Center {
                 Text("Waiting… (${s!!::class.simpleName})", modifier = Modifier.padding(24.dp))
             }
+    }
+}
+
+/** Says what the connection is doing, so a blocked network is not an endless silent spinner. */
+@Composable
+private fun ConnectionHint() {
+    val conn by Td.connectionState.collectAsState()
+    val text = when (conn) {
+        is TdApi.ConnectionStateWaitingForNetwork -> "Waiting for the network…"
+        is TdApi.ConnectionStateConnectingToProxy -> "Connecting to the proxy…"
+        is TdApi.ConnectionStateConnecting -> "Connecting to Telegram… (if this takes long, Telegram may be blocked on this network: try a VPN)"
+        is TdApi.ConnectionStateUpdating -> "Updating…"
+        else -> null
+    }
+    if (text != null) {
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text,
+            modifier = Modifier.padding(horizontal = 24.dp),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
@@ -264,6 +298,7 @@ private fun RegistrationScreen() {
 
 @Composable
 private fun Main(prefs: Prefs, repo: Repo) {
+    UpdateDialog()
     var screen by remember { mutableStateOf<Screen>(Screen.Chats) }
     when (val s = screen) {
         Screen.Chats -> ChatList(
@@ -586,7 +621,7 @@ private fun SettingsScreen(prefs: Prefs, onMyProfile: () -> Unit, onBack: () -> 
             )
         }
     ) { pad ->
-        Column(Modifier.padding(pad)) {
+        Column(Modifier.padding(pad).verticalScroll(rememberScrollState())) {
             ListItem(
                 headlineContent = { Text("My profile and banner") },
                 supportingContent = { Text("Your banner is shown to other Umbra users") },
@@ -616,6 +651,25 @@ private fun SettingsScreen(prefs: Prefs, onMyProfile: () -> Unit, onBack: () -> 
                     steps = 9,
                     onValueChangeFinished = { prefs.sendDelaySeconds = delay.toInt() }
                 )
+            }
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+            Text("Theme", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+            for ((id, label) in Themes.all) {
+                ListItem(
+                    headlineContent = { Text(label) },
+                    leadingContent = { RadioButton(selected = prefs.theme == id, onClick = { prefs.theme = id }) },
+                    modifier = Modifier.clickable { prefs.theme = id }
+                )
+            }
+            if (prefs.theme == Themes.SNOW || prefs.theme == Themes.RAIN || prefs.theme == Themes.BUBBLES || prefs.theme == Themes.LIGHTNING) {
+                Column(Modifier.padding(16.dp)) {
+                    Text("Amount: ${prefs.themeAmount}")
+                    Slider(
+                        value = prefs.themeAmount.toFloat(),
+                        onValueChange = { prefs.themeAmount = it.toInt() },
+                        valueRange = 10f..100f
+                    )
+                }
             }
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
             ListItem(

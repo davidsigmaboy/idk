@@ -30,6 +30,10 @@ object Td {
 
     val updates = MutableSharedFlow<TdApi.Object>(extraBufferCapacity = 256)
 
+    // TDLib can deliver its first update before Client.create() has returned, when `client` is still
+    // null. The parameters used to be dropped then and the app waited forever. The flag remembers it.
+    @Volatile private var paramsPending = false
+
     @Synchronized
     fun start(context: Context) {
         if (client != null) return
@@ -55,6 +59,10 @@ object Td {
                 "Failed to start TDLib: ${t.message}\n\nNative libraries may be missing from the APK."
             client = null
         }
+        if (paramsPending && client != null) {
+            paramsPending = false
+            sendParameters()
+        }
     }
 
     private fun onUpdate(obj: TdApi.Object) {
@@ -63,7 +71,7 @@ object Td {
                 val s = obj.authorizationState
                 Log.d(TAG, "auth → ${s.javaClass.simpleName}")
                 if (s is TdApi.AuthorizationStateWaitTdlibParameters) {
-                    sendParameters()
+                    synchronized(this) { if (client == null) paramsPending = true else sendParameters() }
                 }
                 _authState.value = s
             }
@@ -106,7 +114,7 @@ object Td {
                         name = "online"
                         value = TdApi.OptionValueBoolean(true)
                     }, null)
-                    client?.send(TdApi.SetNetworkType(TdApi.NetworkTypeWiFi()), null)
+                    client?.send(TdApi.SetNetworkType(TdApi.NetworkTypeOther()), null)
                 }
                 is TdApi.Error -> {
                     Log.e(TAG, "SetTdlibParameters failed ${result.code}: ${result.message}")
@@ -127,6 +135,7 @@ object Td {
         _authState.value = null
         _connectionState.value = null
         _fatalError.value = null
+        paramsPending = false
     }
 
     @Suppress("UNCHECKED_CAST")

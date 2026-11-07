@@ -3,6 +3,9 @@ name: Umbra Android (APK)
 on:
   workflow_dispatch:   # manual only
 
+permissions:
+  contents: write      # publishes the APK as a GitHub release (the in-app updater reads it)
+
 jobs:
   apk:
     environment: "Random environment"
@@ -35,13 +38,28 @@ jobs:
         run: ./umbra-android/scripts/build-tdlib.sh
       - uses: gradle/actions/setup-gradle@v4
         with: { gradle-version: "8.7" }
+      - name: Signing key
+        env:
+          TG_API_HASH: ${{ secrets.API_HASH || secrets.TG_API_HASH }}
+        run: |
+          # The committed key file is encrypted with your API hash (a secret), so it is useless to anybody else.
+          openssl enc -d -aes-256-cbc -pbkdf2 -pass env:TG_API_HASH -in umbra-android/umbra.jks.enc -out "$RUNNER_TEMP/umbra.jks"
+          echo "UMBRA_KEYSTORE=$RUNNER_TEMP/umbra.jks" >> "$GITHUB_ENV"
+          echo "UMBRA_BUILD=$((1000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
       - name: Build APK
         env:
-          # Optional override; defaults are official public Telegram Android credentials
           TG_API_ID: ${{ secrets.API_ID || secrets.TG_API_ID }}
           TG_API_HASH: ${{ secrets.API_HASH || secrets.TG_API_HASH }}
         run: gradle -p umbra-android --no-daemon :app:assembleDebug
+      - name: Name the APK
+        run: cp umbra-android/app/build/outputs/apk/debug/*.apk Umbra.apk
       - uses: actions/upload-artifact@v4
         with:
           name: Umbra-apk
-          path: umbra-android/app/build/outputs/apk/debug/*.apk
+          path: Umbra.apk
+      - name: Publish release for the in-app updater
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "android-$UMBRA_BUILD" Umbra.apk --repo "$GITHUB_REPOSITORY" \
+            --title "Umbra Android $UMBRA_BUILD" --notes "Umbra for Android, build $UMBRA_BUILD." --latest=false

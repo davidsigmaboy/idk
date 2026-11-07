@@ -12,6 +12,10 @@ val tgApiHash: String = (project.findProperty("TG_API_HASH") as String?)
     ?: System.getenv("TG_API_HASH")
     ?: ""
 
+// CI numbers every build; the app compares it with the newest GitHub release to offer an update.
+val umbraBuild: Int = (System.getenv("UMBRA_BUILD") ?: "3").toInt()
+val umbraKeystore: String? = System.getenv("UMBRA_KEYSTORE")
+
 android {
     namespace = "app.umbra.client"
     compileSdk = 34
@@ -19,11 +23,27 @@ android {
         applicationId = "app.umbra.client"
         minSdk = 24
         targetSdk = 34
-        versionCode = 3
-        versionName = "1.2.0"
+        versionCode = umbraBuild
+        versionName = "1.3.$umbraBuild"
         buildConfigField("int", "TG_API_ID", tgApiId)
         buildConfigField("String", "TG_API_HASH", "\"$tgApiHash\"")
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
+    }
+    // One fixed key for every build: Android installs an update only over an app signed with the same key.
+    signingConfigs {
+        if (umbraKeystore != null) {
+            create("umbra") {
+                storeFile = file(umbraKeystore)
+                storePassword = "8d97ee1aef2c9ae3094aa51ffc334069"
+                keyAlias = "umbra"
+                keyPassword = "8d97ee1aef2c9ae3094aa51ffc334069"
+            }
+        }
+    }
+    buildTypes {
+        getByName("debug") {
+            if (umbraKeystore != null) signingConfig = signingConfigs.getByName("umbra")
+        }
     }
     buildFeatures { compose = true; buildConfig = true }
     composeOptions { kotlinCompilerExtensionVersion = "1.5.14" }
