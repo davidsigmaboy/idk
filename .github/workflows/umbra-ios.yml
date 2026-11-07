@@ -39,6 +39,7 @@ jobs:
           git submodule update --init --recursive --depth 1 --jobs 8
           git apply --whitespace=nowarn ../patches/umbra-ios.patch
           git apply --whitespace=nowarn ../patches/umbra-plugins.patch
+          git apply --whitespace=nowarn ../patches/umbra-banners.patch
           # The fake provisioning profiles shipped with Ghostgram expired on 2026-10-30; the IPA is
           # re-signed with your own Apple ID anyway, so the expiry check is switched off.
           python3 - <<'PY'

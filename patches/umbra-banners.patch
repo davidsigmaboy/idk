@@ -1,0 +1,325 @@
+diff --git a/Ghostgram/Features/Appearance/Sources/GGAppearanceModule.swift b/Ghostgram/Features/Appearance/Sources/GGAppearanceModule.swift
+index a4efebc8..fbe10b55 100644
+--- a/Ghostgram/Features/Appearance/Sources/GGAppearanceModule.swift
++++ b/Ghostgram/Features/Appearance/Sources/GGAppearanceModule.swift
+@@ -22,6 +22,7 @@ public enum GGAppearanceModule {
+         GGChatDecor.register()
+         GGChatListDecor.register()
+         GGProfileDecor.register()
++        UmbraBannerDecor.register()
+         GGAppearancePendingPoints.register()
+ 
+         GGAppearanceMenu.register()
+diff --git a/Ghostgram/Features/Appearance/Sources/Profile/UmbraBanners.swift b/Ghostgram/Features/Appearance/Sources/Profile/UmbraBanners.swift
+new file mode 100644
+index 00000000..a0e1b55b
+--- /dev/null
++++ b/Ghostgram/Features/Appearance/Sources/Profile/UmbraBanners.swift
+@@ -0,0 +1,307 @@
++import Foundation
++import UIKit
++import ObjectiveC
++import PhotosUI
++import AsyncDisplayKit
++import Display
++import Postbox
++import SwiftSignalKit
++import TelegramCore
++import AccountContext
++import GGCore
++import GGHooks
++
++/// Umbra profile banners. A person's banner is the newest photo with the caption "#banner" that
++/// THEY sent to the public group @umbra_banners. The sender of a message cannot be forged, so
++/// everybody can only set their own banner. Only Umbra shows it. Cached for 24 hours.
++final class UmbraBanners {
++    static let shared = UmbraBanners()
++
++    private static let groupName = "umbra_banners"
++    private static let tag = "#banner"
++    private static let ttl: TimeInterval = 24.0 * 60.0 * 60.0
++
++    private struct Entry {
++        let date: Date
++        let image: UIImage?
++    }
++
++    // Main thread only.
++    private var entries: [Int64: Entry] = [:]
++    private var waiting: [Int64: [(UIImage?) -> Void]] = [:]
++    private var groupId: PeerId?
++    private let disposables = DisposableSet()
++
++    private init() {
++    }
++
++    func cached(_ userId: PeerId) -> UIImage? {
++        return self.entries[userId.toInt64()]?.image
++    }
++
++    func load(context: AccountContext, userId: PeerId, force: Bool = false, completion: @escaping (UIImage?) -> Void) {
++        assert(Thread.isMainThread)
++        let key = userId.toInt64()
++        if !force, let entry = self.entries[key], Date().timeIntervalSince(entry.date) < UmbraBanners.ttl {
++            completion(entry.image)
++            return
++        }
++        if self.waiting[key] != nil {
++            self.waiting[key]?.append(completion)
++            return
++        }
++        self.waiting[key] = [completion]
++        self.resolveGroup(context: context, completion: { [weak self] groupId in
++            guard let self, let groupId else {
++                self?.finish(key, image: nil, store: false)
++                return
++            }
++            self.search(context: context, groupId: groupId, userId: userId)
++        })
++    }
++
++    private func finish(_ key: Int64, image: UIImage?, store: Bool) {
++        if store {
++            self.entries[key] = Entry(date: Date(), image: image)
++        }
++        let callbacks = self.waiting.removeValue(forKey: key) ?? []
++        for callback in callbacks {
++            callback(image)
++        }
++    }
++
++    private func resolveGroup(context: AccountContext, completion: @escaping (PeerId?) -> Void) {
++        if let groupId = self.groupId {
++            completion(groupId)
++            return
++        }
++        let signal = context.engine.peers.resolvePeerByName(name: UmbraBanners.groupName, referrer: nil)
++        |> mapToSignal { result -> Signal<EnginePeer?, NoError> in
++            switch result {
++            case .progress:
++                return .complete()
++            case let .result(peer):
++                return .single(peer)
++            }
++        }
++        |> take(1)
++        |> deliverOnMainQueue
++        self.disposables.add(signal.start(next: { [weak self] peer in
++            self?.groupId = peer?.id
++            completion(peer?.id)
++        }, completed: {
++        }))
++    }
++
++    private func search(context: AccountContext, groupId: PeerId, userId: PeerId) {
++        let key = userId.toInt64()
++        let location: SearchMessagesLocation = .peer(peerId: groupId, fromId: userId, tags: .photo, reactions: nil, threadId: nil, minDate: nil, maxDate: nil)
++        let signal = context.engine.messages.searchMessages(location: location, query: UmbraBanners.tag, state: nil, limit: 20)
++        |> take(1)
++        |> deliverOnMainQueue
++        self.disposables.add(signal.start(next: { [weak self] result, _ in
++            guard let self else {
++                return
++            }
++            var best: (Message, TelegramMediaImage)?
++            for message in result.messages {
++                // The sender is checked again: only the person's own photos count.
++                guard message.author?.id == userId, message.text.lowercased().contains(UmbraBanners.tag) else {
++                    continue
++                }
++                guard let image = message.media.compactMap({ $0 as? TelegramMediaImage }).first else {
++                    continue
++                }
++                if best == nil || message.timestamp > best!.0.timestamp {
++                    best = (message, image)
++                }
++            }
++            guard let (message, image) = best, let representation = largestImageRepresentation(image.representations) else {
++                self.finish(key, image: nil, store: true)
++                return
++            }
++            self.download(context: context, groupId: groupId, key: key, message: message, image: image, resource: representation.resource)
++        }))
++    }
++
++    private func download(context: AccountContext, groupId: PeerId, key: Int64, message: Message, image: TelegramMediaImage, resource: TelegramMediaResource) {
++        let mediaBox = context.account.postbox.mediaBox
++        let reference: MediaResourceReference = .media(media: .message(message: MessageReference(message), media: image), resource: resource)
++        self.disposables.add(fetchedMediaResource(mediaBox: mediaBox, userLocation: .peer(groupId), userContentType: .image, reference: reference).start())
++        let data = mediaBox.resourceData(resource)
++        |> filter { $0.complete }
++        |> take(1)
++        |> deliverOnMainQueue
++        self.disposables.add(data.start(next: { [weak self] data in
++            let loaded = UIImage(contentsOfFile: data.path)
++            self?.finish(key, image: loaded, store: loaded != nil)
++        }))
++    }
++
++    /// Sends the picked photo to the group with the caption "#banner" (joining the group first).
++    func setMine(context: AccountContext, image: UIImage, completion: @escaping (Bool) -> Void) {
++        assert(Thread.isMainThread)
++        let scaled = UmbraBanners.downscale(image, maxSide: 1600.0)
++        guard let data = scaled.jpegData(compressionQuality: 0.85) else {
++            completion(false)
++            return
++        }
++        self.resolveGroup(context: context, completion: { [weak self] groupId in
++            guard let self, let groupId else {
++                completion(false)
++                return
++            }
++            let join = context.engine.peers.joinChannel(peerId: groupId, hash: nil)
++            |> map { _ -> Void in
++                return Void()
++            }
++            |> `catch` { _ -> Signal<Void, NoError> in
++                // Already a member or not allowed: the send below decides.
++                return .single(Void())
++            }
++            |> take(1)
++            |> deliverOnMainQueue
++            self.disposables.add(join.start(next: { [weak self] _ in
++                self?.send(context: context, groupId: groupId, data: data, size: scaled.size, image: scaled, completion: completion)
++            }))
++        })
++    }
++
++    private func send(context: AccountContext, groupId: PeerId, data: Data, size: CGSize, image: UIImage, completion: @escaping (Bool) -> Void) {
++        let resource = LocalFileMediaResource(fileId: Int64.random(in: Int64.min ... Int64.max), size: Int64(data.count))
++        context.account.postbox.mediaBox.storeResourceData(resource.id, data: data)
++        let representation = TelegramMediaImageRepresentation(dimensions: PixelDimensions(width: Int32(size.width), height: Int32(size.height)), resource: resource, progressiveSizes: [], immediateThumbnailData: nil)
++        let media = TelegramMediaImage(imageId: MediaId(namespace: Namespaces.Media.LocalImage, id: Int64.random(in: Int64.min ... Int64.max)), representations: [representation], immediateThumbnailData: nil, reference: nil, partialReference: nil, flags: [])
++        let message: EnqueueMessage = .message(text: UmbraBanners.tag, attributes: [], inlineStickers: [:], mediaReference: .standalone(media: media), threadId: nil, replyToMessageId: nil, replyToStoryId: nil, localGroupingKey: nil, correlationId: nil, bubbleUpEmojiOrStickersets: [])
++        let signal = enqueueMessages(account: context.account, peerId: groupId, messages: [message])
++        |> deliverOnMainQueue
++        self.disposables.add(signal.start(next: { [weak self] _ in
++            self?.entries[context.account.peerId.toInt64()] = Entry(date: Date(), image: image)
++            completion(true)
++        }))
++    }
++
++    private static func downscale(_ image: UIImage, maxSide: CGFloat) -> UIImage {
++        let longest = max(image.size.width, image.size.height)
++        if longest <= maxSide || longest <= 0.0 {
++            return image
++        }
++        let scale = maxSide / longest
++        let target = CGSize(width: floor(image.size.width * scale), height: floor(image.size.height * scale))
++        let format = UIGraphicsImageRendererFormat()
++        format.scale = 1.0
++        return UIGraphicsImageRenderer(size: target, format: format).image { _ in
++            image.draw(in: CGRect(origin: CGPoint(), size: target))
++        }
++    }
++}
++
++/// The banner view at the top of a profile header, and the row that changes the own banner.
++enum UmbraBannerDecor {
++    private static var key: UInt8 = 0
++    private static var pickerKey: UInt8 = 0
++
++    static func register() {
++        GGPeerInfoHooks.headerDidLayout.register({ header in
++            UmbraBannerDecor.update(header)
++        }, order: 110)
++        GGPeerInfoHooks.infoRows.register({ info in
++            guard info.isSettings || info.peer.id == info.context.account.peerId else {
++                return []
++            }
++            return [GGPeerInfoRow(id: "umbra.banner", label: "Баннер Umbra", text: "Нажми, чтобы выбрать фото", action: { [weak controller = info.controller] in
++                UmbraBannerDecor.pick(context: info.context, controller: controller)
++            })]
++        }, order: 110)
++    }
++
++    private final class Holder {
++        let view = UIImageView()
++        var userId: PeerId?
++
++        init() {
++            self.view.contentMode = .scaleAspectFill
++            self.view.clipsToBounds = true
++            self.view.alpha = 0.0
++            self.view.isUserInteractionEnabled = false
++        }
++    }
++
++    private static func update(_ header: GGPeerInfoHeader) {
++        guard let peer = header.peer, case .user = peer else {
++            return
++        }
++        let holder: Holder
++        if let current = objc_getAssociatedObject(header.node, &UmbraBannerDecor.key) as? Holder {
++            holder = current
++        } else {
++            holder = Holder()
++            objc_setAssociatedObject(header.node, &UmbraBannerDecor.key, holder, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
++        }
++        let userId = peer.id
++        let anchor = header.backgroundContainerView ?? header.node.view.subviews.first(where: { $0 !== holder.view })
++        guard let anchor else {
++            return
++        }
++        if holder.view.superview !== header.node.view {
++            header.node.view.insertSubview(holder.view, aboveSubview: anchor)
++        }
++        holder.view.frame = CGRect(x: 0.0, y: 0.0, width: max(header.width, anchor.frame.width), height: max(0.0, anchor.frame.maxY))
++        if holder.userId != userId {
++            holder.userId = userId
++            holder.view.image = nil
++            holder.view.alpha = 0.0
++            if let image = UmbraBanners.shared.cached(userId) {
++                holder.view.image = image
++                holder.view.alpha = 1.0
++            } else {
++                UmbraBanners.shared.load(context: header.context, userId: userId, completion: { [weak holder] image in
++                    guard let holder, holder.userId == userId, let image else {
++                        return
++                    }
++                    holder.view.image = image
++                    UIView.animate(withDuration: 0.2, animations: {
++                        holder.view.alpha = 1.0
++                    })
++                })
++            }
++        }
++    }
++
++    private static func pick(context: AccountContext, controller: ViewController?) {
++        var configuration = PHPickerConfiguration()
++        configuration.selectionLimit = 1
++        configuration.filter = .images
++        let picker = PHPickerViewController(configuration: configuration)
++        let delegate = UmbraBannerPickerDelegate(context: context)
++        picker.delegate = delegate
++        objc_setAssociatedObject(picker, &UmbraBannerDecor.pickerKey, delegate, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
++        controller?.present(picker, animated: true)
++    }
++}
++
++private final class UmbraBannerPickerDelegate: NSObject, PHPickerViewControllerDelegate {
++    private let context: AccountContext
++
++    init(context: AccountContext) {
++        self.context = context
++        super.init()
++    }
++
++    func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
++        picker.dismiss(animated: true)
++        guard let provider = results.first?.itemProvider, provider.canLoadObject(ofClass: UIImage.self) else {
++            return
++        }
++        let context = self.context
++        provider.loadObject(ofClass: UIImage.self, completionHandler: { object, _ in
++            guard let image = object as? UIImage else {
++                return
++            }
++            DispatchQueue.main.async {
++                UmbraBanners.shared.setMine(context: context, image: image, completion: { _ in
++                })
++            }
++        })
++    }
++}
