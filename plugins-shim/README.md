@@ -28,3 +28,12 @@ Tests: `python3 -m unittest discover -s tests` (6 tests, use plugins written fro
 The iOS app has no Python interpreter yet. Still to do: embed CPython (e.g. Python-Apple-support) in the
 Bazel build, call `Host.handle` from the outgoing pipeline (`GGOutgoingPipeline`) and the incoming-message
 hook, and a settings screen that draws the JSON form.
+
+## How it is embedded in the iOS app
+
+- `Ghostgram/Features/Messages/Sources/Plugins/GGPluginHost.swift` (in `patches/umbra-plugins.patch`) opens
+  `Python.framework` with `dlopen` and calls `umbra_bootstrap.handle(json)`. No Python in the app → nothing happens.
+- The CI step "Add Python and the plugin layer to the IPA" adds `Python.framework` (BeeWare Python-Apple-support, 3.13),
+  the standard library, this folder (`python/umbra`) and turns on the Files-app access to the app's Documents.
+- Switch: **Settings → Umbra → Sending → Plugins**. Put `.plugin` files into *Files → Umbra → Plugins*.
+- Today plugins run on **outgoing text messages** (modify). Cancel and incoming-message hooks are not wired to the app yet.

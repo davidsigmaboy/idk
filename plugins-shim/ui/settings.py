@@ -1,78 +1,74 @@
 """exteraGram `ui.settings` elements. They only describe the form; Umbra renders it natively."""
-from dataclasses import dataclass, field
-from typing import Any, Callable, List, Optional
 
 
 class _Item:
     kind = "item"
+    _fields = ()
+
+    def __init__(self, *args, **kwargs):
+        defaults = self._defaults()
+        names = list(defaults)
+        if len(args) > len(names):
+            raise TypeError("too many positional arguments")
+        values = dict(defaults)
+        values.update(zip(names, args))
+        for k, v in kwargs.items():
+            if k not in defaults:
+                raise TypeError(f"unexpected argument {k!r}")
+            values[k] = v
+        for k, v in values.items():
+            setattr(self, k, v)
+
+    @classmethod
+    def _defaults(cls):
+        return {}
 
     def to_dict(self):
         d = {"type": self.kind}
-        for k, v in self.__dict__.items():
-            if callable(v) or k.startswith("_"):
-                continue
-            d[k] = v
-        d["has_action"] = any(callable(v) for v in self.__dict__.values())
+        action = False
+        for k in self._defaults():
+            v = getattr(self, k)
+            if callable(v):
+                action = True
+            else:
+                d[k] = v
+        d["has_action"] = action
         return d
 
 
-@dataclass
 class Header(_Item):
-    text: str = ""
     kind = "header"
+    @classmethod
+    def _defaults(cls): return {"text": ""}
 
-@dataclass
 class Divider(_Item):
-    text: str = ""
     kind = "divider"
+    @classmethod
+    def _defaults(cls): return {"text": ""}
 
-@dataclass
 class Text(_Item):
-    text: str = ""
-    icon: Optional[str] = None
-    accent: bool = False
-    red: bool = False
-    on_click: Optional[Callable[..., Any]] = None
     kind = "text"
+    @classmethod
+    def _defaults(cls): return {"text": "", "icon": None, "accent": False, "red": False, "on_click": None}
 
-@dataclass
 class Switch(_Item):
-    key: str = ""
-    text: str = ""
-    default: bool = False
-    subtext: Optional[str] = None
-    icon: Optional[str] = None
-    on_change: Optional[Callable[[bool], Any]] = None
-    on_long_click: Optional[Callable[..., Any]] = None
     kind = "switch"
+    @classmethod
+    def _defaults(cls): return {"key": "", "text": "", "default": False, "subtext": None, "icon": None,
+                                "on_change": None, "on_long_click": None}
 
-@dataclass
 class Input(_Item):
-    key: str = ""
-    text: str = ""
-    default: str = ""
-    subtext: Optional[str] = None
-    icon: Optional[str] = None
-    on_change: Optional[Callable[[str], Any]] = None
     kind = "input"
+    @classmethod
+    def _defaults(cls): return {"key": "", "text": "", "default": "", "subtext": None, "icon": None, "on_change": None}
 
-@dataclass
 class Selector(_Item):
-    key: str = ""
-    text: str = ""
-    default: int = 0
-    items: List[str] = field(default_factory=list)
-    icon: Optional[str] = None
-    on_change: Optional[Callable[[int], Any]] = None
     kind = "selector"
+    @classmethod
+    def _defaults(cls): return {"key": "", "text": "", "default": 0, "items": None, "icon": None, "on_change": None}
 
-@dataclass
 class EditText(_Item):
-    key: str = ""
-    hint: str = ""
-    default: str = ""
-    multiline: bool = False
-    max_length: Optional[int] = None
-    mask: Optional[str] = None
-    on_change: Optional[Callable[[str], Any]] = None
     kind = "edit_text"
+    @classmethod
+    def _defaults(cls): return {"key": "", "hint": "", "default": "", "multiline": False, "max_length": None,
+                                "mask": None, "on_change": None}

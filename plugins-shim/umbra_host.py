@@ -4,7 +4,6 @@ The app talks to it with JSON only:  handle(json_str) -> json_str  (see `Host.ha
 Ops: load, unload, list, settings (form description), set_setting, send, update, actions.
 """
 import ast
-import importlib
 import json
 import logging
 import os
@@ -57,6 +56,8 @@ class Host:
         self.meta: Dict[str, Dict[str, Any]] = {}
         self._actions: List[Dict[str, Any]] = []
         self._settings: Dict[str, Dict[str, Any]] = {}
+        self._files: Dict[str, Any] = {}      # path -> (mtime, plugin id or None)
+        self.errors: Dict[str, str] = {}      # file name -> last load error
         client_utils._host = self
 
     # --- services used by the shim ------------------------------------
@@ -125,6 +126,36 @@ class Host:
         self.meta.pop(pid, None)
         if plugin:
             plugin.on_plugin_unload()
+
+    def sync(self, directory: str) -> None:
+        """Load new / changed `.plugin` files of a folder, unload removed ones. Cheap enough to call per message."""
+        os.makedirs(directory, exist_ok=True)
+        seen = {}
+        for name in sorted(os.listdir(directory)):
+            if not name.endswith(".plugin"):
+                continue
+            path = os.path.join(directory, name)
+            try:
+                stamp = os.stat(path).st_mtime_ns
+            except OSError:
+                continue
+            seen[path] = stamp
+            old = self._files.get(path)
+            if old and old[0] == stamp:
+                continue
+            if old and old[1]:
+                self.unload(old[1])
+            try:
+                self._files[path] = (stamp, self.load(path))
+                self.errors.pop(name, None)
+            except Exception as e:  # a broken plugin must not stop the others
+                self._files[path] = (stamp, None)
+                self.errors[name] = f"{type(e).__name__}: {e}"
+                log.warning("plugin %s: %s", name, e)
+        for path in [p for p in self._files if p not in seen]:
+            _, pid = self._files.pop(path)
+            if pid:
+                self.unload(pid)
 
     # --- dispatch ------------------------------------------------------
     def _ordered(self, hook_name: str, exact: str):
@@ -198,6 +229,8 @@ class Host:
             op = r["op"]
             if op == "load":
                 out: Any = {"id": self.load(r["path"])}
+            elif op == "sync":
+                self.sync(r["dir"]); out = {"errors": self.errors, "count": len(self.plugins)}
             elif op == "unload":
                 self.unload(r["id"]); out = {}
             elif op == "list":

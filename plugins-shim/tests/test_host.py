@@ -62,6 +62,21 @@ class HostTests(unittest.TestCase):
         out = call(self.host, op="send", params={"message": ".hello  Eve"})
         self.assertEqual(out["params"]["message"], "Hello, Eve!")  # word_block (prio 5) first, then hello
 
+    def test_sync_folder(self):
+        import shutil
+        folder = os.path.join(self.tmp.name, "plugins")
+        os.makedirs(folder)
+        r = call(self.host, op="sync", dir=folder)
+        self.assertEqual(r["count"], 0)
+        shutil.copy(os.path.join(HERE, "hello.plugin"), folder)
+        open(os.path.join(folder, "broken.plugin"), "w").write("def (:")
+        r = call(self.host, op="sync", dir=folder)
+        self.assertEqual(r["count"], 1)
+        self.assertIn("broken.plugin", r["errors"])
+        self.assertEqual(call(self.host, op="send", params={"message": ".hello Z"})["params"]["message"], "Hello, Z!")
+        os.remove(os.path.join(folder, "hello.plugin"))
+        self.assertEqual(call(self.host, op="sync", dir=folder)["count"], 0)
+
     def test_errors_do_not_crash(self):
         bad = json.loads(self.host.handle(json.dumps({"op": "load", "path": "/nonexistent.plugin"})))
         self.assertFalse(bad["ok"])

@@ -38,6 +38,7 @@ jobs:
           git checkout -q FETCH_HEAD
           git submodule update --init --recursive --depth 1 --jobs 8
           git apply --whitespace=nowarn ../patches/umbra-ios.patch
+          git apply --whitespace=nowarn ../patches/umbra-plugins.patch
           # The fake provisioning profiles shipped with Ghostgram expired on 2026-10-30; the IPA is
           # re-signed with your own Apple ID anyway, so the expiry check is switched off.
           python3 - <<'PY'
@@ -90,6 +91,68 @@ jobs:
             --buildNumber "${GITHUB_RUN_NUMBER}" --configuration debug_arm64 \
             --outputBuildArtifactsPath build-output/ipa
           mv build-output/ipa/Telegram.ipa build-output/ipa/Umbra.ipa
+
+      - name: Add Python and the plugin layer to the IPA
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          WORK="$RUNNER_TEMP/py"; mkdir -p "$WORK"; cd "$WORK"
+          TAG=$(gh release list --repo beeware/Python-Apple-support --limit 100 --json tagName -q '.[].tagName' | grep '^3\.13-' | head -1)
+          echo "Python-Apple-support release: $TAG"
+          gh release download "$TAG" --repo beeware/Python-Apple-support --pattern 'Python-3.13-iOS-support*.tar.gz'
+          tar xzf Python-3.13-iOS-support*.tar.gz
+          SLICE="$WORK/Python.xcframework/ios-arm64"
+          test -d "$SLICE/Python.framework" || { echo "::error::Python.framework not found in $TAG"; ls -R "$WORK/Python.xcframework" | head -40; exit 1; }
+          test -d "$SLICE/lib/python3.13" || { echo "::error::python3.13 stdlib not found in $TAG"; exit 1; }
+
+          IPA="$GITHUB_WORKSPACE/ghostgram/build-output/ipa/Umbra.ipa"
+          rm -rf "$WORK/ipa"; mkdir "$WORK/ipa"; cd "$WORK/ipa"
+          unzip -q "$IPA"
+          APP=$(ls -d Payload/*.app | head -1)
+          mkdir -p "$APP/Frameworks" "$APP/python/lib" "$APP/python/umbra"
+          cp -R "$SLICE/Python.framework" "$APP/Frameworks/"
+          cp -R "$SLICE/lib/python3.13" "$APP/python/lib/"
+          rm -rf "$APP/python/lib/python3.13"/{test,idlelib,tkinter,turtledemo,ensurepip,lib2to3,__pycache__}
+          cp "$GITHUB_WORKSPACE"/plugins-shim/*.py "$APP/python/umbra/"
+          cp -R "$GITHUB_WORKSPACE/plugins-shim/ui" "$APP/python/umbra/ui"
+          rm -f "$APP"/python/umbra/test_*.py
+
+          # iOS wants every native Python module as its own framework; Python finds it through a .fwork file.
+          python3 - "$APP" <<'PY'
+          import glob, os, plistlib, shutil, subprocess, sys
+          app = sys.argv[1]
+          count = 0
+          for path in sorted(glob.glob(f"{app}/python/lib/python3.13/lib-dynload/*")):
+              name = os.path.basename(path)
+              if not name.endswith((".so", ".dylib")):
+                  continue
+              module = name.split(".cpython")[0].split(".")[0]
+              fw = f"{app}/Frameworks/{module}.framework"
+              os.makedirs(fw, exist_ok=True)
+              shutil.move(path, f"{fw}/{module}")
+              subprocess.check_call(["install_name_tool", "-id", f"@rpath/{module}.framework/{module}", f"{fw}/{module}"])
+              with open(f"{fw}/Info.plist", "wb") as f:
+                  plistlib.dump({"CFBundleExecutable": module, "CFBundleIdentifier": "org.python." + module.replace("_", "-"),
+                                 "CFBundleName": module, "CFBundlePackageType": "FMWK", "CFBundleVersion": "1",
+                                 "CFBundleShortVersionString": "1", "MinimumOSVersion": "13.0",
+                                 "CFBundleSupportedPlatforms": ["iPhoneOS"]}, f)
+              fwork = os.path.splitext(path)[0] + ".fwork"
+              with open(fwork, "w") as f:
+                  f.write(f"Frameworks/{module}.framework/{module}")
+              with open(f"{fw}/{module}.origin", "w") as f:
+                  f.write(os.path.relpath(fwork, app))
+              count += 1
+          print("native Python modules moved into frameworks:", count)
+          PY
+
+          # Plugins are dropped into the app's Documents folder through the Files app.
+          plutil -replace UIFileSharingEnabled -bool true "$APP/Info.plist"
+          plutil -replace LSSupportsOpeningDocumentsInPlace -bool true "$APP/Info.plist"
+
+          rm -f "$IPA"
+          zip -qry "$IPA" .
+          ls -lh "$IPA"
 
       - uses: actions/upload-artifact@v4
         with:

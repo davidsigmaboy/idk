@@ -1,6 +1,5 @@
 """exteraGram `base_plugin` API, re-implemented for Umbra (subset used by most plugins)."""
 import logging
-from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
 
@@ -30,15 +29,12 @@ class HookResult:
         self.params = params
 
 
-@dataclass
 class MenuItemData:
-    menu_type: Any = None
-    text: str = ""
-    on_click: Optional[Callable[..., Any]] = None
-    item_id: Optional[str] = None
-    icon: Optional[str] = None
-    condition: Optional[str] = None
-    priority: int = 0
+    def __init__(self, menu_type: Any = None, text: str = "", on_click: Optional[Callable[..., Any]] = None,
+                 item_id: Optional[str] = None, icon: Optional[str] = None, condition: Optional[str] = None,
+                 priority: int = 0):
+        self.menu_type, self.text, self.on_click = menu_type, text, on_click
+        self.item_id, self.icon, self.condition, self.priority = item_id, icon, condition, priority
 
 
 class BasePlugin:
