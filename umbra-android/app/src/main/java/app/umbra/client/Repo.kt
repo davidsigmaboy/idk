@@ -77,7 +77,10 @@ class Repo(private val prefs: Prefs) {
 
     /** Applies text features and the optional delay. [cancelled] is polled during the delay. */
     suspend fun send(chatId: Long, raw: String, cancelled: () -> Boolean) {
-        val text = TextTools.apply(raw, prefs)
+        var text = TextTools.apply(raw, prefs)
+        if (prefs.pluginsEnabled) {
+            text = Plugins.transformOutgoing(Td.context(), text) ?: return   // null: a plugin cancelled the message
+        }
         if (text.isBlank()) return
         var left = prefs.sendDelaySeconds * 10
         while (left > 0) {

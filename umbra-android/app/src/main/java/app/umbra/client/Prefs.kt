@@ -51,4 +51,9 @@ class Prefs(context: Context) {
     var themeAmount: Int
         get() = amountState.intValue
         set(v) { amountState.intValue = v; sp.edit().putInt("themeAmount", v).apply() }
+
+    /** exteraGram plugins see outgoing text before it is sent. */
+    var pluginsEnabled: Boolean
+        get() = sp.getBoolean("plugins", false)
+        set(v) = sp.edit().putBoolean("plugins", v).apply()
 }

@@ -1,7 +1,20 @@
+// Plugins (exteraGram .plugin files) need Python from Chaquopy. It is switched on by UMBRA_PLUGINS=1; the CI builds
+// with it and falls back to a build without if Chaquopy can not be fetched. The Kotlin code reaches Python by
+// reflection, so both builds compile.
+buildscript {
+    repositories { google(); mavenCentral(); gradlePluginPortal() }
+    dependencies {
+        if (System.getenv("UMBRA_PLUGINS") == "1") classpath("com.chaquo.python:gradle:16.0.0")
+    }
+}
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
 }
+
+val withPlugins = System.getenv("UMBRA_PLUGINS") == "1"
+if (withPlugins) apply(plugin = "com.chaquo.python")
 
 // Your own api_id / api_hash from https://my.telegram.org (env or gradle.properties: TG_API_ID, TG_API_HASH).
 // Never commit them and never reuse another app's credentials: Telegram limits or bans such clients.
@@ -28,6 +41,9 @@ android {
         buildConfigField("int", "TG_API_ID", tgApiId)
         buildConfigField("String", "TG_API_HASH", "\"$tgApiHash\"")
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
+        if (withPlugins) {
+            withGroovyBuilder { "python" { "version"("3.12") } }
+        }
     }
     // One fixed key for every build: Android installs an update only over an app signed with the same key.
     signingConfigs {

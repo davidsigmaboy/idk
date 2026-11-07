@@ -18,6 +18,7 @@ object Td {
 
     private var client: Client? = null
     private lateinit var appContext: Context
+    fun context(): Context = appContext
 
     private val _authState = MutableStateFlow<TdApi.AuthorizationState?>(null)
     val authState = _authState.asStateFlow()

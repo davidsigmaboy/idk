@@ -3,6 +3,8 @@ package app.umbra.client
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -28,6 +30,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.drinkless.tdlib.TdApi
 
 class MainActivity : ComponentActivity() {
@@ -642,6 +645,7 @@ private fun SettingsScreen(prefs: Prefs, onMyProfile: () -> Unit, onBack: () -> 
             Toggle("Anti-caps", "HELLO ALL → Hello all", caps) {
                 caps = it; prefs.antiCaps = it
             }
+            PluginsSection(prefs)
             Column(Modifier.padding(16.dp)) {
                 Text("Delayed sending: ${delay.toInt()} s")
                 Slider(
@@ -715,4 +719,58 @@ private fun Toggle(title: String, info: String, value: Boolean, onChange: (Boole
         supportingContent = { Text(info) },
         trailingContent = { Switch(checked = value, onCheckedChange = onChange) }
     )
+}
+
+/** exteraGram plugins: switch, install a ".plugin" file, see what is loaded. */
+@Composable
+private fun PluginsSection(prefs: Prefs) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var enabled by remember { mutableStateOf(prefs.pluginsEnabled) }
+    var files by remember { mutableStateOf(Plugins.installedFiles(context)) }
+    var info by remember { mutableStateOf<String?>(null) }
+
+    suspend fun refresh() {
+        files = Plugins.installedFiles(context)
+        info = if (!enabled) null else {
+            val problem = withContext(kotlinx.coroutines.Dispatchers.IO) { Plugins.problem(context) }
+            if (problem != null) problem else {
+                val st = Plugins.status(context)
+                if (st == null) "Plugins could not be read" else
+                    "Loaded: ${st.first}" + st.second.entries.joinToString("") { "\n${it.key}: ${it.value}" }
+            }
+        }
+    }
+
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: android.net.Uri? ->
+        if (uri != null) {
+            scope.launch {
+                val name = context.contentResolver.query(uri, null, null, null, null)?.use { c ->
+                    val i = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    if (i >= 0 && c.moveToFirst()) c.getString(i) else null
+                } ?: "plugin.plugin"
+                val ok = runCatching { Plugins.install(context, uri, name) }.getOrDefault(false)
+                refresh()
+                if (!ok) info = "Could not copy the file"
+            }
+        }
+    }
+
+    LaunchedEffect(enabled) { refresh() }
+
+    Toggle("Plugins (exteraGram)", "Python .plugin files can change the text you send", enabled) {
+        enabled = it; prefs.pluginsEnabled = it
+    }
+    if (enabled) {
+        Column(Modifier.padding(horizontal = 16.dp)) {
+            Button(onClick = { picker.launch("*/*") }) { Text("Add a .plugin file") }
+            for (f in files) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(f.name, Modifier.weight(1f))
+                    TextButton(onClick = { Plugins.remove(context, f); scope.launch { refresh() } }) { Text("Remove") }
+                }
+            }
+            info?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+        }
+    }
 }

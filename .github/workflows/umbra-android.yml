@@ -46,11 +46,30 @@ jobs:
           openssl enc -d -aes-256-cbc -pbkdf2 -pass env:TG_API_HASH -in umbra-android/umbra.jks.enc -out "$RUNNER_TEMP/umbra.jks"
           echo "UMBRA_KEYSTORE=$RUNNER_TEMP/umbra.jks" >> "$GITHUB_ENV"
           echo "UMBRA_BUILD=$((1000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
-      - name: Build APK
+      - name: Plugin runtime sources
+        run: |
+          mkdir -p umbra-android/app/src/main/python
+          cp plugins-shim/*.py umbra-android/app/src/main/python/
+          cp -r plugins-shim/ui umbra-android/app/src/main/python/ui
+          find umbra-android/app/src/main/python -name __pycache__ -prune -exec rm -rf {} +
+      - name: Build APK (with plugins)
+        id: with_plugins
+        continue-on-error: true
         env:
           TG_API_ID: ${{ secrets.API_ID || secrets.TG_API_ID }}
           TG_API_HASH: ${{ secrets.API_HASH || secrets.TG_API_HASH }}
+          UMBRA_PLUGINS: "1"
         run: gradle -p umbra-android --no-daemon :app:assembleDebug
+      - name: Build APK (without plugins, fallback)
+        if: steps.with_plugins.outcome != 'success'
+        env:
+          TG_API_ID: ${{ secrets.API_ID || secrets.TG_API_ID }}
+          TG_API_HASH: ${{ secrets.API_HASH || secrets.TG_API_HASH }}
+          UMBRA_PLUGINS: "0"
+        run: |
+          echo "::warning::Chaquopy build failed, the APK has no plugin support"
+          rm -rf umbra-android/app/src/main/python
+          gradle -p umbra-android --no-daemon :app:assembleDebug
       - name: Name the APK
         run: cp umbra-android/app/build/outputs/apk/debug/*.apk Umbra.apk
       - uses: actions/upload-artifact@v4
