@@ -48,6 +48,7 @@ private sealed interface Screen {
     data object Chats : Screen
     data object Settings : Screen
     class Chat(val id: Long, val title: String) : Screen
+    class Profile(val userId: Long, val title: String) : Screen
 }
 
 @Composable
@@ -272,11 +273,15 @@ private fun Main(prefs: Prefs, repo: Repo) {
         )
         Screen.Settings -> {
             BackHandler { screen = Screen.Chats }
-            SettingsScreen(prefs) { screen = Screen.Chats }
+            SettingsScreen(prefs, onMyProfile = { screen = Screen.Profile(0L, "My profile") }) { screen = Screen.Chats }
+        }
+        is Screen.Profile -> {
+            BackHandler { screen = Screen.Chats }
+            ProfileScreen(s.userId, s.title) { screen = Screen.Chats }
         }
         is Screen.Chat -> {
             BackHandler { screen = Screen.Chats }
-            ChatScreen(repo, prefs, s.id, s.title) { screen = Screen.Chats }
+            ChatScreen(repo, prefs, s.id, s.title, onProfile = { screen = Screen.Profile(s.id, s.title) }) { screen = Screen.Chats }
         }
     }
 }
@@ -384,6 +389,7 @@ private fun ChatScreen(
     prefs: Prefs,
     chatId: Long,
     title: String,
+    onProfile: () -> Unit,
     onBack: () -> Unit
 ) {
     var msgs by remember { mutableStateOf<List<MsgItem>>(emptyList()) }
@@ -394,6 +400,11 @@ private fun ChatScreen(
     var canLoadMore by remember { mutableStateOf(true) }
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
+
+    // Warm the banner cache, so the profile opens with the banner already there.
+    LaunchedEffect(chatId) {
+        if (chatId > 0) runCatching { Banners.load(chatId) }
+    }
 
     LaunchedEffect(chatId) {
         runCatching { Td.call(TdApi.OpenChat().apply { this.chatId = chatId }) }
@@ -459,7 +470,13 @@ private fun ChatScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                title = {
+                    Text(
+                        title, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        // A private chat id is the user id: tap the name to open the profile with the banner.
+                        modifier = if (chatId > 0) Modifier.clickable { onProfile() } else Modifier
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -547,7 +564,7 @@ private fun ChatScreen(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SettingsScreen(prefs: Prefs, onBack: () -> Unit) {
+private fun SettingsScreen(prefs: Prefs, onMyProfile: () -> Unit, onBack: () -> Unit) {
     var ghost by remember { mutableStateOf(prefs.ghostMode) }
     var keep by remember { mutableStateOf(prefs.keepDeleted) }
     var tidy by remember { mutableStateOf(prefs.tidySpaces) }
@@ -570,6 +587,11 @@ private fun SettingsScreen(prefs: Prefs, onBack: () -> Unit) {
         }
     ) { pad ->
         Column(Modifier.padding(pad)) {
+            ListItem(
+                headlineContent = { Text("My profile and banner") },
+                supportingContent = { Text("Your banner is shown to other Umbra users") },
+                modifier = Modifier.clickable { onMyProfile() }
+            )
             Toggle("Ghost mode", "Do not mark messages as read", ghost) {
                 ghost = it; prefs.ghostMode = it
             }
