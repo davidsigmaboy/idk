@@ -5,6 +5,9 @@ name: Umbra iOS (IPA)
 # Apple ID (Sideloadly / AltStore) before installing.
 # Secrets (in the Random environment): API_ID, API_HASH (https://my.telegram.org). The build stops at once if they are missing.
 
+permissions:
+  contents: write      # the IPA is also published as a GitHub release
+
 on:
   workflow_dispatch:   # manual only: a macOS minute counts as 10 minutes of the free quota
 
@@ -40,6 +43,7 @@ jobs:
           git apply --whitespace=nowarn ../patches/umbra-ios.patch
           git apply --whitespace=nowarn ../patches/umbra-plugins.patch
           git apply --whitespace=nowarn ../patches/umbra-banners.patch
+          git apply --whitespace=nowarn ../patches/umbra-themes.patch
           # The fake provisioning profiles shipped with Ghostgram expired on 2026-10-30; the IPA is
           # re-signed with your own Apple ID anyway, so the expiry check is switched off.
           python3 - <<'PY'
@@ -164,3 +168,9 @@ jobs:
         with:
           name: Umbra-ipa
           path: ghostgram/build-output/ipa/Umbra.ipa
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "ios-$GITHUB_RUN_NUMBER" ghostgram/build-output/ipa/Umbra.ipa --repo "$GITHUB_REPOSITORY" \
+            --title "Umbra iOS $GITHUB_RUN_NUMBER" --notes "Umbra for iOS, build $GITHUB_RUN_NUMBER. Re-sign with your Apple ID (Sideloadly / AltStore) before installing." --latest=false
