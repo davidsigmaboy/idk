@@ -40,7 +40,8 @@ android {
         versionName = "1.3.$umbraBuild"
         buildConfigField("int", "TG_API_ID", tgApiId)
         buildConfigField("String", "TG_API_HASH", "\"$tgApiHash\"")
-        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
+        // Chaquopy's Python 3.12 has no 32-bit ARM build: the plugin build is for 64-bit phones only.
+        ndk { abiFilters += if (withPlugins) listOf("arm64-v8a", "x86_64") else listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
         if (withPlugins) {
             withGroovyBuilder { "python" { "version"("3.12") } }
         }
