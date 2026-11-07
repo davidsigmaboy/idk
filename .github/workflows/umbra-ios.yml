@@ -102,9 +102,11 @@ jobs:
           echo "Python-Apple-support release: $TAG"
           gh release download "$TAG" --repo beeware/Python-Apple-support --pattern 'Python-3.13-iOS-support*.tar.gz'
           tar xzf Python-3.13-iOS-support*.tar.gz
-          SLICE="$WORK/Python.xcframework/ios-arm64"
-          test -d "$SLICE/Python.framework" || { echo "::error::Python.framework not found in $TAG"; ls -R "$WORK/Python.xcframework" | head -40; exit 1; }
-          test -d "$SLICE/lib/python3.13" || { echo "::error::python3.13 stdlib not found in $TAG"; exit 1; }
+          XC="$WORK/Python.xcframework"
+          SLICE="$XC/ios-arm64"
+          test -d "$SLICE/Python.framework" || { echo "::error::Python.framework not found in $TAG"; ls "$XC" "$SLICE"; exit 1; }
+          test -d "$XC/lib/python3.13" || { echo "::error::python3.13 stdlib not found in $TAG"; ls "$XC" "$SLICE"; exit 1; }
+          test -d "$SLICE/lib-arm64/python3.13/lib-dynload" || { echo "::error::native modules not found in $TAG"; ls "$XC" "$SLICE"; exit 1; }
 
           IPA="$GITHUB_WORKSPACE/ghostgram/build-output/ipa/Umbra.ipa"
           rm -rf "$WORK/ipa"; mkdir "$WORK/ipa"; cd "$WORK/ipa"
@@ -112,16 +114,18 @@ jobs:
           APP=$(ls -d Payload/*.app | head -1)
           mkdir -p "$APP/Frameworks" "$APP/python/lib" "$APP/python/umbra"
           cp -R "$SLICE/Python.framework" "$APP/Frameworks/"
-          cp -R "$SLICE/lib/python3.13" "$APP/python/lib/"
+          # Same as Python's own install_python: shared stdlib + the arm64 device part (native modules).
+          cp -R "$XC/lib/python3.13" "$APP/python/lib/"
+          cp -R "$SLICE/lib-arm64/python3.13/." "$APP/python/lib/python3.13/"
           rm -rf "$APP/python/lib/python3.13"/{test,idlelib,tkinter,turtledemo,ensurepip,lib2to3,__pycache__}
           cp "$GITHUB_WORKSPACE"/plugins-shim/*.py "$APP/python/umbra/"
           cp -R "$GITHUB_WORKSPACE/plugins-shim/ui" "$APP/python/umbra/ui"
           rm -f "$APP"/python/umbra/test_*.py
 
           # iOS wants every native Python module as its own framework; Python finds it through a .fwork file.
-          python3 - "$APP" <<'PY'
+          python3 - "$APP" "$XC/build/iOS-dylib-Info-template.plist" <<'PY'
           import glob, os, plistlib, shutil, subprocess, sys
-          app = sys.argv[1]
+          app, template = sys.argv[1], sys.argv[2]
           count = 0
           for path in sorted(glob.glob(f"{app}/python/lib/python3.13/lib-dynload/*")):
               name = os.path.basename(path)
@@ -132,11 +136,12 @@ jobs:
               os.makedirs(fw, exist_ok=True)
               shutil.move(path, f"{fw}/{module}")
               subprocess.check_call(["install_name_tool", "-id", f"@rpath/{module}.framework/{module}", f"{fw}/{module}"])
+              with open(template, "rb") as f:
+                  info = plistlib.load(f)
+              info["CFBundleExecutable"] = module
+              info["CFBundleIdentifier"] = "org.python." + module.replace("_", "-")
               with open(f"{fw}/Info.plist", "wb") as f:
-                  plistlib.dump({"CFBundleExecutable": module, "CFBundleIdentifier": "org.python." + module.replace("_", "-"),
-                                 "CFBundleName": module, "CFBundlePackageType": "FMWK", "CFBundleVersion": "1",
-                                 "CFBundleShortVersionString": "1", "MinimumOSVersion": "13.0",
-                                 "CFBundleSupportedPlatforms": ["iPhoneOS"]}, f)
+                  plistlib.dump(info, f)
               fwork = os.path.splitext(path)[0] + ".fwork"
               with open(fwork, "w") as f:
                   f.write(f"Frameworks/{module}.framework/{module}")
