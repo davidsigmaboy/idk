@@ -3,13 +3,24 @@ package app.umbra.client
 import kotlinx.coroutines.delay
 import org.drinkless.tdlib.TdApi
 
-data class ChatItem(val id: Long, val title: String, val last: String, val unread: Int)
-data class MsgItem(val id: Long, val text: String, val outgoing: Boolean, val deleted: Boolean)
+data class ChatItem(
+    val id: Long,
+    val title: String,
+    val last: String,
+    val unread: Int,
+    val date: Int = 0,
+    val photoFileId: Int = 0,
+    val muted: Boolean = false
+)
+data class MsgItem(val id: Long, val text: String, val outgoing: Boolean, val deleted: Boolean, val date: Int = 0)
 
 /** Telegram operations used by the UI. All Umbra features are applied here. */
 class Repo(private val prefs: Prefs) {
     /** Message ids that were deleted remotely while "keep deleted" is on. */
     val deletedIds = HashSet<Long>()
+
+    /** Chat id to the file id of its small photo, filled when the chat list loads. */
+    val avatars = HashMap<Long, Int>()
 
     /** Local cache of messages we have already seen (for keep-deleted). */
     private val msgCache = HashMap<Long, MsgItem>()
@@ -40,7 +51,13 @@ class Repo(private val prefs: Prefs) {
         }).chatIds
         return ids.map { id ->
             val c = Td.call(TdApi.GetChat().apply { chatId = id })
-            ChatItem(c.id, c.title, textOf(c.lastMessage?.content), c.unreadCount)
+            avatars[c.id] = c.photo?.small?.id ?: 0
+            ChatItem(
+                c.id, c.title, textOf(c.lastMessage?.content), c.unreadCount,
+                date = c.lastMessage?.date ?: 0,
+                photoFileId = c.photo?.small?.id ?: 0,
+                muted = c.notificationSettings?.muteFor?.let { it > 0 } ?: false
+            )
         }
     }
 
@@ -57,7 +74,7 @@ class Repo(private val prefs: Prefs) {
             this.onlyLocal = false
         })
         val items = result.messages.map { m ->
-            val item = MsgItem(m.id, textOf(m.content), m.isOutgoing, m.id in deletedIds)
+            val item = MsgItem(m.id, textOf(m.content), m.isOutgoing, m.id in deletedIds, m.date)
             msgCache[m.id] = item
             item
         }

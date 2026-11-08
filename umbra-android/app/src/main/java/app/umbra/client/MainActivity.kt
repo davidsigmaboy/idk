@@ -24,6 +24,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
@@ -42,7 +44,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             val dark = androidx.compose.foundation.isSystemInDarkTheme()
             val msn = prefs.theme == Themes.MSN
-            MaterialTheme(colorScheme = if (msn) Themes.msnColors() else if (dark) darkColorScheme() else lightColorScheme()) {
+            MaterialTheme(colorScheme = if (msn) Themes.msnColors() else if (dark) Tg.dark() else Tg.light()) {
                 Box(
                     Modifier.fillMaxSize().then(
                         if (msn) Modifier.background(Themes.msnBackground) else Modifier
@@ -379,7 +381,8 @@ private fun ChatList(repo: Repo, onOpen: (ChatItem) -> Unit, onSettings: () -> U
                     IconButton(onClick = onSettings) {
                         Icon(Icons.Default.Settings, contentDescription = "Settings")
                     }
-                }
+                },
+                colors = tgBarColors()
             )
         }
     ) { pad ->
@@ -401,19 +404,7 @@ private fun ChatList(repo: Repo, onOpen: (ChatItem) -> Unit, onSettings: () -> U
                     item { Text(it, Modifier.padding(16.dp), color = MaterialTheme.colorScheme.error) }
                 }
                 items(chats, key = { it.id }) { c ->
-                    ListItem(
-                        headlineContent = {
-                            Text(c.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        },
-                        supportingContent = {
-                            Text(c.last, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        },
-                        trailingContent = {
-                            if (c.unread > 0) Badge { Text("${c.unread}") }
-                        },
-                        modifier = Modifier.clickable { onOpen(c) }
-                    )
-                    HorizontalDivider()
+                    ChatRow(c) { onOpen(c) }
                 }
             }
         }
@@ -509,17 +500,22 @@ private fun ChatScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Text(
-                        title, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
                         // A private chat id is the user id: tap the name to open the profile with the banner.
                         modifier = if (chatId > 0) Modifier.clickable { onProfile() } else Modifier
-                    )
+                    ) {
+                        Avatar(title, repo.avatars[chatId] ?: 0, 38.dp)
+                        Spacer(Modifier.width(10.dp))
+                        Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
+                    }
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
-                }
+                },
+                colors = tgBarColors()
             )
         },
         bottomBar = {
@@ -534,20 +530,28 @@ private fun ChatScreen(
                     }
                 }
                 Row(
-                    Modifier.fillMaxWidth().padding(8.dp).imePadding(),
-                    verticalAlignment = Alignment.CenterVertically
+                    Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp).imePadding(),
+                    verticalAlignment = Alignment.Bottom
                 ) {
-                    OutlinedTextField(
+                    TextField(
                         value = input,
                         onValueChange = { input = it },
                         modifier = Modifier.weight(1f),
                         placeholder = { Text("Message") },
-                        maxLines = 4
+                        maxLines = 5,
+                        shape = RoundedCornerShape(24.dp),
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = MaterialTheme.colorScheme.surface,
+                            unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                            focusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                            unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent
+                        )
                     )
-                    IconButton(
+                    Spacer(Modifier.width(6.dp))
+                    FilledIconButton(
                         onClick = {
                             val text = input
-                            if (text.isBlank()) return@IconButton
+                            if (text.isBlank()) return@FilledIconButton
                             input = ""
                             cancelFlag = false
                             pending = prefs.sendDelaySeconds > 0
@@ -556,7 +560,8 @@ private fun ChatScreen(
                                 pending = false
                             }
                         },
-                        enabled = input.isNotBlank()
+                        enabled = input.isNotBlank(),
+                        modifier = Modifier.size(48.dp)
                     ) {
                         Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send")
                     }
@@ -566,7 +571,9 @@ private fun ChatScreen(
     ) { pad ->
         LazyColumn(
             state = listState,
-            modifier = Modifier.padding(pad).fillMaxSize().padding(horizontal = 12.dp),
+            modifier = Modifier.padding(pad).fillMaxSize()
+                .background(Tg.wallpaper(androidx.compose.foundation.isSystemInDarkTheme()))
+                .padding(horizontal = 8.dp),
             reverseLayout = true
         ) {
             if (loadingMore) {
@@ -577,24 +584,7 @@ private fun ChatScreen(
                 }
             }
             items(msgs.reversed(), key = { it.id }) { m ->
-                Row(
-                    Modifier.fillMaxWidth().padding(vertical = 3.dp),
-                    horizontalArrangement = if (m.outgoing) Arrangement.End else Arrangement.Start
-                ) {
-                    Surface(
-                        color = if (m.outgoing) MaterialTheme.colorScheme.primaryContainer
-                        else MaterialTheme.colorScheme.surfaceVariant,
-                        shape = MaterialTheme.shapes.medium
-                    ) {
-                        Text(
-                            (if (m.deleted) "🗑 " else "") + m.text,
-                            Modifier.padding(10.dp),
-                            style = if (m.deleted) MaterialTheme.typography.bodyMedium.copy(
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            ) else MaterialTheme.typography.bodyMedium
-                        )
-                    }
-                }
+                Bubble(m)
             }
         }
     }
@@ -620,7 +610,8 @@ private fun SettingsScreen(prefs: Prefs, onMyProfile: () -> Unit, onBack: () -> 
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
-                }
+                },
+                colors = tgBarColors()
             )
         }
     ) { pad ->
@@ -773,4 +764,19 @@ private fun PluginsSection(prefs: Prefs) {
             info?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
         }
     }
+}
+
+/** The blue Telegram header (dark blue-grey at night); the MSN theme keeps its own colours. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun tgBarColors(): TopAppBarColors {
+    val msn = MaterialTheme.colorScheme.background == androidx.compose.ui.graphics.Color.Transparent
+    if (msn) return TopAppBarDefaults.topAppBarColors()
+    val dark = androidx.compose.foundation.isSystemInDarkTheme()
+    return TopAppBarDefaults.topAppBarColors(
+        containerColor = if (dark) Tg.headerDark else Tg.headerLight,
+        titleContentColor = androidx.compose.ui.graphics.Color.White,
+        navigationIconContentColor = androidx.compose.ui.graphics.Color.White,
+        actionIconContentColor = androidx.compose.ui.graphics.Color.White
+    )
 }
