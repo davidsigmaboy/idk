@@ -12,10 +12,10 @@ index a4efebc8..fbe10b55 100644
          GGAppearanceMenu.register()
 diff --git a/Ghostgram/Features/Appearance/Sources/Profile/UmbraBanners.swift b/Ghostgram/Features/Appearance/Sources/Profile/UmbraBanners.swift
 new file mode 100644
-index 00000000..a0e1b55b
+index 00000000..39e08078
 --- /dev/null
 +++ b/Ghostgram/Features/Appearance/Sources/Profile/UmbraBanners.swift
-@@ -0,0 +1,307 @@
+@@ -0,0 +1,320 @@
 +import Foundation
 +import UIKit
 +import ObjectiveC
@@ -291,7 +291,7 @@ index 00000000..a0e1b55b
 +        configuration.selectionLimit = 1
 +        configuration.filter = .images
 +        let picker = PHPickerViewController(configuration: configuration)
-+        let delegate = UmbraBannerPickerDelegate(context: context)
++        let delegate = UmbraBannerPickerDelegate(context: context, controller: controller)
 +        picker.delegate = delegate
 +        objc_setAssociatedObject(picker, &UmbraBannerDecor.pickerKey, delegate, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
 +        controller?.present(picker, animated: true)
@@ -300,10 +300,18 @@ index 00000000..a0e1b55b
 +
 +private final class UmbraBannerPickerDelegate: NSObject, PHPickerViewControllerDelegate {
 +    private let context: AccountContext
++    private weak var controller: ViewController?
 +
-+    init(context: AccountContext) {
++    init(context: AccountContext, controller: ViewController?) {
 +        self.context = context
++        self.controller = controller
 +        super.init()
++    }
++
++    private func notify(_ text: String) {
++        let alert = UIAlertController(title: "Баннер Umbra", message: text, preferredStyle: .alert)
++        alert.addAction(UIAlertAction(title: "OK", style: .default))
++        self.controller?.present(alert, animated: true)
 +    }
 +
 +    func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
@@ -312,12 +320,17 @@ index 00000000..a0e1b55b
 +            return
 +        }
 +        let context = self.context
-+        provider.loadObject(ofClass: UIImage.self, completionHandler: { object, _ in
++        provider.loadObject(ofClass: UIImage.self, completionHandler: { [weak self] object, _ in
 +            guard let image = object as? UIImage else {
 +                return
 +            }
 +            DispatchQueue.main.async {
-+                UmbraBanners.shared.setMine(context: context, image: image, completion: { _ in
++                UmbraBanners.shared.setMine(context: context, image: image, completion: { ok in
++                    if ok {
++                        self?.notify("Фото отправлено в группу @umbra_banners с подписью #banner. Другие пользователи Umbra увидят баннер, когда откроют твой профиль. Если фото не появилось в группе, у тебя нет права отправлять туда фото: проверь права группы.")
++                    } else {
++                        self?.notify("Не получилось: группа @umbra_banners недоступна или фото не удалось обработать.")
++                    }
 +                })
 +            }
 +        })

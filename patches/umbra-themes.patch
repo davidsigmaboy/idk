@@ -1,0 +1,539 @@
+diff --git a/Ghostgram/Features/Appearance/Settings/Sources/GGAppearanceSettings.swift b/Ghostgram/Features/Appearance/Settings/Sources/GGAppearanceSettings.swift
+index fb6f4930..eaa7128e 100644
+--- a/Ghostgram/Features/Appearance/Settings/Sources/GGAppearanceSettings.swift
++++ b/Ghostgram/Features/Appearance/Settings/Sources/GGAppearanceSettings.swift
+@@ -74,6 +74,8 @@ public enum GGAppearanceSettings {
+ 
+     public static let amoled = GGSetting<Bool>("appearance.theme.amoled", default: false)
+     public static let amoledKeyboard = GGSetting<Bool>("appearance.theme.amoledKeyboard", default: false)
++    /// Umbra: the sky-blue look of the old MSN Messenger (light themes).
++    public static let msnTheme = GGSetting<Bool>("appearance.theme.msn", default: false)
+     public static let hideSeparators = GGSetting<Bool>("appearance.theme.hideSeparators", default: false)
+     /// %, 0…100; 100 = the server's colors.
+     public static let nameColorSaturation = GGSetting<Double>("appearance.theme.nameSaturation", default: 100.0)
+@@ -159,6 +161,7 @@ public enum GGAppearanceSettings {
+         let _ = GGAppearanceSettings.hidePinnedMessages
+         let _ = GGAppearanceSettings.amoled
+         let _ = GGAppearanceSettings.amoledKeyboard
++        let _ = GGAppearanceSettings.msnTheme
+         let _ = GGAppearanceSettings.hideSeparators
+         let _ = GGAppearanceSettings.nameColorSaturation
+         let _ = GGAppearanceSettings.edgeStyle
+@@ -239,6 +242,8 @@ public enum GGTripleTapDelete: String {
+ public enum GGSnowStyle: String {
+     case snow
+     case lightning
++    case rain
++    case bubbles
+ }
+ 
+ /// "RRGGBB" / "#RRGGBB" → 0xRRGGBB; nil for "" and anything malformed.
+diff --git a/Ghostgram/Features/Appearance/Settings/Sources/GGAppearanceSnapshot.swift b/Ghostgram/Features/Appearance/Settings/Sources/GGAppearanceSnapshot.swift
+index 4f4f6ba9..a3d03cfe 100644
+--- a/Ghostgram/Features/Appearance/Settings/Sources/GGAppearanceSnapshot.swift
++++ b/Ghostgram/Features/Appearance/Settings/Sources/GGAppearanceSnapshot.swift
+@@ -27,6 +27,7 @@ public struct GGAppearanceSnapshot: Equatable {
+     // Theme
+     public var amoled = false
+     public var amoledKeyboard = false
++    public var msn = false
+     public var hideSeparators = false
+     /// 0…1; 1 = the server's colors.
+     public var nameColorSaturation: Double = 1.0
+@@ -72,7 +73,7 @@ public struct GGAppearanceSnapshot: Equatable {
+ 
+     /// The parts that change the theme's colors or images (the rest only needs a relayout).
+     public var changesThemeColors: Bool {
+-        if self.amoled || self.amoledKeyboard || self.hideSeparators {
++        if self.amoled || self.amoledKeyboard || self.msn || self.hideSeparators {
+             return true
+         }
+         if self.readCheckRGB != nil || self.unreadCheckRGB != nil {
+@@ -126,6 +127,7 @@ public struct GGAppearanceSnapshot: Equatable {
+ 
+         result.amoled = GGAppearanceSettings.amoled.value
+         result.amoledKeyboard = GGAppearanceSettings.amoledKeyboard.value
++        result.msn = GGAppearanceSettings.msnTheme.value
+         result.hideSeparators = GGAppearanceSettings.hideSeparators.value
+         result.nameColorSaturation = ggClamp(double(GGAppearanceSettings.nameColorSaturation) / 100.0, 0.0, 1.0)
+ 
+diff --git a/Ghostgram/Features/Appearance/Sources/Chat/GGDecorViews.swift b/Ghostgram/Features/Appearance/Sources/Chat/GGDecorViews.swift
+index 50641434..04caa011 100644
+--- a/Ghostgram/Features/Appearance/Sources/Chat/GGDecorViews.swift
++++ b/Ghostgram/Features/Appearance/Sources/Chat/GGDecorViews.swift
+@@ -29,7 +29,9 @@ enum GGSystemState {
+     }
+ 
+     static var current: Bool {
+-        return ProcessInfo.processInfo.isLowPowerModeEnabled || UIAccessibility.isReduceMotionEnabled
++        // Only Reduce Motion stops the weather: Low Power Mode used to as well, which looked like a
++        // broken feature (the person turned it on themselves).
++        return UIAccessibility.isReduceMotionEnabled
+     }
+ }
+ 
+@@ -121,188 +123,273 @@ final class GGLoopingVideoView: UIView {
+     }
+ }
+ 
+-/// Snowfall (snowfall + the former New Year wallpaper effect): a `CAEmitterLayer`, drawn by the
+-/// render server — no per-frame CPU work, no part in theme rebuilds. Stops in Low Power Mode and
+-/// with Reduce Motion.
+-///
+-/// The old Ghostgram's look (Telegram-Android's `SnowflakesEffect`): flakes are born all over the
+-/// view and drift down for a few seconds. Build 188 spawned them above the top edge only and let
+-/// them fall at 36 pt a second — the first seconds of snow sat under the glass header, then a
+-/// dozen flakes a second crossed the screen: «не отображается».
++/// Snowfall and the other weather themes (snow, rain, bubbles, thunderstorm). Drawn by hand and
++/// driven by a display link: a few hundred small shapes at 30 fps, only while the view is in a
++/// window and not paused. Umbra replaced the emitter-layer version, which showed nothing on some
++/// devices («снег и молния не работают»).
+ final class GGSnowView: UIView {
+     enum Kind {
+-        /// The chat list header: 18 flakes a second living ~2 s.
++        /// The chat list header.
+         case header
+-        /// Behind messages: 75 a second for a full screen (by area), living 3–5 s.
++        /// Behind messages: counts scale with the area.
+         case background
+     }
+ 
++    private struct Particle {
++        var x: CGFloat
++        var y: CGFloat
++        var speed: CGFloat
++        var size: CGFloat
++        var phase: CGFloat
++    }
++
++    private struct Bolt {
++        var points: [CGPoint]
++        var life: CGFloat
++    }
++
+     private let kind: Kind
+-    private let emitterLayer = CAEmitterLayer()
+-    private var currentStyle: GGSnowStyle?
+-    private var currentIntensity: Double = -1.0
+-    private var areaFactor: CGFloat = 1.0
++    private var style: GGSnowStyle = .snow
++    private var intensity: CGFloat = 1.0
+     private var isPaused = false
++    private var particles: [Particle] = []
++    private var link: CADisplayLink?
++    private var lastTimestamp: CFTimeInterval = 0.0
++    private var flash: CGFloat = 0.0
++    private var nextBolt: CGFloat = 2.0
++    private var bolt: Bolt?
+ 
+     init(frame: CGRect, kind: Kind) {
+         self.kind = kind
+         super.init(frame: frame)
+         self.isUserInteractionEnabled = false
++        self.isOpaque = false
++        self.backgroundColor = .clear
+         self.clipsToBounds = true
+-        self.emitterLayer.emitterShape = .rectangle
+-        self.emitterLayer.emitterMode = .volume
+-        self.emitterLayer.renderMode = .unordered
+-        self.emitterLayer.seed = UInt32.random(in: 0 ... UInt32.max)
+-        // Nothing is born until the view is in a window (`willMove(toWindow:)`).
+-        self.emitterLayer.birthRate = 0.0
+-        self.layer.addSublayer(self.emitterLayer)
++        self.contentMode = .redraw
+     }
+ 
+     required init?(coder: NSCoder) {
+         fatalError("init(coder:) has not been implemented")
+     }
+ 
++    deinit {
++        self.link?.invalidate()
++    }
++
+     func update(style: GGSnowStyle, intensity: Double, isPaused: Bool) {
+-        self.isPaused = isPaused
+-        if style != self.currentStyle || intensity != self.currentIntensity {
+-            self.currentStyle = style
+-            self.currentIntensity = intensity
+-            self.rebuildCells()
++        if style != self.style {
++            self.style = style
++            self.particles = []
++            self.bolt = nil
++            self.flash = 0.0
+         }
+-        self.updateBirthRate(isInWindow: self.window != nil)
++        // The settings keep percent (10…100); older callers pass a fraction.
++        let fraction = intensity > 1.0 ? intensity / 100.0 : intensity
++        self.intensity = CGFloat(max(0.1, min(1.0, fraction)))
++        self.isPaused = isPaused
+         self.isHidden = isPaused
++        self.setRunning(self.window != nil && !isPaused)
+     }
+ 
+     override func willMove(toWindow newWindow: UIWindow?) {
+         super.willMove(toWindow: newWindow)
+-        self.updateBirthRate(isInWindow: newWindow != nil)
++        self.setRunning(newWindow != nil && !self.isPaused)
+     }
+ 
+-    /// The layer's birth rate multiplies every cell's: 0 off screen or paused (the live flakes
+-    /// finish their life), 1 otherwise.
+-    private func updateBirthRate(isInWindow: Bool) {
+-        CATransaction.begin()
+-        CATransaction.setDisableActions(true)
+-        self.emitterLayer.birthRate = (isInWindow && !self.isPaused) ? 1.0 : 0.0
+-        CATransaction.commit()
++    private func setRunning(_ running: Bool) {
++        if running {
++            if self.link == nil {
++                let link = CADisplayLink(target: GGSnowProxy(view: self), selector: #selector(GGSnowProxy.tick(_:)))
++                link.preferredFramesPerSecond = 30
++                link.add(to: .main, forMode: .common)
++                self.link = link
++                self.lastTimestamp = 0.0
++            }
++        } else if let link = self.link {
++            link.invalidate()
++            self.link = nil
++        }
+     }
+ 
+-    override func layoutSubviews() {
+-        super.layoutSubviews()
+-        CATransaction.begin()
+-        CATransaction.setDisableActions(true)
+-        self.emitterLayer.frame = self.bounds
+-        self.emitterLayer.emitterPosition = CGPoint(x: self.bounds.midX, y: self.bounds.midY)
+-        self.emitterLayer.emitterSize = self.bounds.size
+-        CATransaction.commit()
+-
++    private func targetCount() -> Int {
+         let screen = UIScreen.main.bounds.size
+-        let areaFactor: CGFloat
++        let area = max(1.0, screen.width * screen.height)
++        let factor: CGFloat
+         switch self.kind {
+         case .header:
+-            areaFactor = 1.0
++            factor = max(0.05, min(0.4, (self.bounds.width * self.bounds.height) / area))
+         case .background:
+-            areaFactor = max(0.12, min(1.0, (self.bounds.width * self.bounds.height) / max(1.0, screen.width * screen.height)))
++            factor = max(0.1, min(1.0, (self.bounds.width * self.bounds.height) / area))
++        }
++        let base: CGFloat
++        switch self.style {
++        case .snow:
++            base = 90.0
++        case .rain:
++            base = 150.0
++        case .lightning:
++            base = 130.0
++        case .bubbles:
++            base = 16.0
+         }
+-        if abs(self.areaFactor - areaFactor) > 0.01 {
+-            self.areaFactor = areaFactor
+-            self.rebuildCells()
++        return max(3, Int((base * factor * self.intensity).rounded()))
++    }
++
++    private func spawn(anywhere: Bool) -> Particle {
++        let width = max(1.0, self.bounds.width)
++        let height = max(1.0, self.bounds.height)
++        switch self.style {
++        case .snow:
++            return Particle(x: CGFloat.random(in: 0.0 ... width), y: anywhere ? CGFloat.random(in: 0.0 ... height) : -6.0, speed: CGFloat.random(in: 36.0 ... 70.0), size: CGFloat.random(in: 1.0 ... 2.6), phase: CGFloat.random(in: 0.0 ... 6.28))
++        case .bubbles:
++            return Particle(x: CGFloat.random(in: 0.0 ... width), y: anywhere ? CGFloat.random(in: 0.0 ... height) : height + 30.0, speed: CGFloat.random(in: 28.0 ... 70.0), size: CGFloat.random(in: 5.0 ... 15.0), phase: CGFloat.random(in: 0.0 ... 6.28))
++        case .rain, .lightning:
++            return Particle(x: CGFloat.random(in: 0.0 ... (width + 60.0)), y: anywhere ? CGFloat.random(in: 0.0 ... height) : -20.0, speed: CGFloat.random(in: 600.0 ... 950.0), size: CGFloat.random(in: 0.7 ... 1.3), phase: 0.0)
+         }
+     }
+ 
+-    private func rebuildCells() {
+-        guard let style = self.currentStyle else {
++    fileprivate func step(_ link: CADisplayLink) {
++        let now = link.timestamp
++        let dt: CGFloat = self.lastTimestamp == 0.0 ? 0.033 : min(0.06, CGFloat(now - self.lastTimestamp))
++        self.lastTimestamp = now
++        if self.bounds.width < 2.0 || self.bounds.height < 2.0 {
+             return
+         }
+-        let intensity = Float(max(0.0, min(1.0, self.currentIntensity)))
+-        let totalBirthRate: Float
+-        let lifetime: (mean: Float, range: Float)
+-        switch self.kind {
+-        case .header:
+-            totalBirthRate = 18.0 * intensity
+-            lifetime = (2.05, 0.05)
+-        case .background:
+-            totalBirthRate = 75.0 * Float(self.areaFactor) * intensity
+-            lifetime = (4.0, 1.0)
++        let target = self.targetCount()
++        while self.particles.count < target {
++            self.particles.append(self.spawn(anywhere: true))
+         }
+-        var cells: [CAEmitterCell] = []
+-        switch style {
+-        case .snow:
+-            // Android's two dots: half 2.5 pt, half 1 pt, white.
+-            for diameter in [2.5, 1.0] as [CGFloat] {
+-                let cell = self.makeCell(image: GGSnowView.dotImage(diameter: diameter), birthRate: totalBirthRate * 0.5, lifetime: lifetime)
+-                cell.color = UIColor(white: 1.0, alpha: 0.9).cgColor
+-                cells.append(cell)
++        if self.particles.count > target {
++            self.particles.removeLast(self.particles.count - target)
++        }
++        let height = self.bounds.height
++        for index in self.particles.indices {
++            var particle = self.particles[index]
++            var gone = false
++            switch self.style {
++            case .snow:
++                particle.y += particle.speed * dt
++                particle.phase += dt
++                particle.x += sin(particle.phase * 1.5) * 18.0 * dt
++                gone = particle.y > height + 6.0
++            case .bubbles:
++                particle.y -= particle.speed * dt
++                particle.phase += dt
++                particle.x += sin(particle.phase * 2.0) * 24.0 * dt
++                gone = particle.y < -particle.size * 2.0
++            case .rain, .lightning:
++                particle.y += particle.speed * dt
++                particle.x -= particle.speed * 0.18 * dt
++                gone = particle.y > height + 20.0 || particle.x < -40.0
+             }
+-        case .lightning:
+-            // Fewer and bigger: a bolt is a glyph, not a dot.
+-            let cell = self.makeCell(image: GGSnowView.boltImage(), birthRate: totalBirthRate * 0.25, lifetime: lifetime)
+-            cell.color = UIColor(rgb: 0xffd84a, alpha: 0.95).cgColor
+-            cell.scale = 1.0
+-            cell.scaleRange = 0.35
+-            cell.spinRange = 0.2
+-            cells.append(cell)
++            if gone {
++                particle = self.spawn(anywhere: false)
++            }
++            self.particles[index] = particle
+         }
+-        CATransaction.begin()
+-        CATransaction.setDisableActions(true)
+-        self.emitterLayer.emitterCells = cells
+-        CATransaction.commit()
++        if self.style == .lightning {
++            self.nextBolt -= dt
++            if self.nextBolt <= 0.0 {
++                self.nextBolt = 2.5 + CGFloat.random(in: 0.0 ... 5.0)
++                self.flash = 1.0
++                self.bolt = self.makeBolt()
++            }
++            self.flash = max(0.0, self.flash - dt * 2.2)
++            if var current = self.bolt {
++                current.life -= dt
++                self.bolt = current.life > 0.0 ? current : nil
++            }
++        }
++        self.setNeedsDisplay()
+     }
+ 
+-    private func makeCell(image: UIImage?, birthRate: Float, lifetime: (mean: Float, range: Float)) -> CAEmitterCell {
+-        let cell = CAEmitterCell()
+-        cell.contents = image?.cgImage
+-        // The images are drawn at the screen scale: without this a flake is three times larger.
+-        cell.contentsScale = image?.scale ?? UIScreen.main.scale
+-        cell.birthRate = birthRate
+-        cell.lifetime = lifetime.mean
+-        cell.lifetimeRange = lifetime.range
+-        // 40–48 pt a second, mostly downwards (π/2 points down here), ±20° of drift.
+-        cell.velocity = 44.0
+-        cell.velocityRange = 4.0
+-        cell.emissionLongitude = .pi / 2.0
+-        cell.emissionRange = .pi / 9.0 * 2.0
+-        // A linear fade-out over the life.
+-        cell.alphaSpeed = -1.0 / lifetime.mean
+-        return cell
++    private func makeBolt() -> Bolt {
++        let width = self.bounds.width
++        let height = self.bounds.height
++        var x = width * CGFloat.random(in: 0.2 ... 0.8)
++        var y: CGFloat = 0.0
++        var points: [CGPoint] = [CGPoint(x: x, y: y)]
++        while y < height * 0.55 {
++            y += height * CGFloat.random(in: 0.04 ... 0.09)
++            x += (CGFloat.random(in: 0.0 ... 1.0) - 0.5) * width * 0.16
++            points.append(CGPoint(x: x, y: y))
++        }
++        return Bolt(points: points, life: 0.35)
+     }
+ 
+-    private static var dots: [CGFloat: UIImage] = [:]
+-    private static var bolt: UIImage?
+-
+-    private static func dotImage(diameter: CGFloat) -> UIImage? {
+-        if let image = GGSnowView.dots[diameter] {
+-            return image
++    override func draw(_ rect: CGRect) {
++        guard let context = UIGraphicsGetCurrentContext() else {
++            return
+         }
+-        let canvas = ceil(diameter) + 2.0
+-        let format = UIGraphicsImageRendererFormat()
+-        format.opaque = false
+-        let image = UIGraphicsImageRenderer(size: CGSize(width: canvas, height: canvas), format: format).image { context in
+-            UIColor.white.setFill()
+-            context.cgContext.fillEllipse(in: CGRect(x: (canvas - diameter) * 0.5, y: (canvas - diameter) * 0.5, width: diameter, height: diameter))
++        switch self.style {
++        case .snow:
++            context.setFillColor(UIColor(white: 1.0, alpha: 0.95).cgColor)
++            context.setStrokeColor(UIColor(red: 0.2, green: 0.4, blue: 0.6, alpha: 0.35).cgColor)
++            context.setLineWidth(0.8)
++            for particle in self.particles {
++                let frame = CGRect(x: particle.x - particle.size, y: particle.y - particle.size, width: particle.size * 2.0, height: particle.size * 2.0)
++                context.fillEllipse(in: frame)
++                context.strokeEllipse(in: frame)
++            }
++        case .bubbles:
++            for particle in self.particles {
++                let frame = CGRect(x: particle.x - particle.size, y: particle.y - particle.size, width: particle.size * 2.0, height: particle.size * 2.0)
++                context.setFillColor(UIColor(red: 0.4, green: 0.7, blue: 1.0, alpha: 0.15).cgColor)
++                context.fillEllipse(in: frame)
++                context.setStrokeColor(UIColor(red: 0.4, green: 0.7, blue: 1.0, alpha: 0.65).cgColor)
++                context.setLineWidth(1.2)
++                context.strokeEllipse(in: frame)
++                let shine = particle.size * 0.22
++                context.setFillColor(UIColor(white: 1.0, alpha: 0.8).cgColor)
++                context.fillEllipse(in: CGRect(x: particle.x - particle.size * 0.45 - shine, y: particle.y - particle.size * 0.45 - shine, width: shine * 2.0, height: shine * 2.0))
++            }
++        case .rain, .lightning:
++            context.setStrokeColor(UIColor(red: 0.55, green: 0.7, blue: 0.9, alpha: 0.7).cgColor)
++            context.setLineCap(.round)
++            for particle in self.particles {
++                let length = particle.size * 7.0
++                context.setLineWidth(particle.size)
++                context.move(to: CGPoint(x: particle.x, y: particle.y))
++                context.addLine(to: CGPoint(x: particle.x + length * 0.18, y: particle.y - length))
++                context.strokePath()
++            }
++            if self.style == .lightning {
++                if self.flash > 0.0 {
++                    context.setFillColor(UIColor(white: 1.0, alpha: 0.5 * self.flash).cgColor)
++                    context.fill(self.bounds)
++                }
++                if let bolt = self.bolt, bolt.points.count > 1 {
++                    let alpha = max(0.0, min(1.0, bolt.life / 0.35))
++                    context.setLineJoin(.round)
++                    context.setStrokeColor(UIColor(red: 0.73, green: 0.84, blue: 1.0, alpha: alpha).cgColor)
++                    context.setLineWidth(6.0)
++                    context.addLines(between: bolt.points)
++                    context.strokePath()
++                    context.setStrokeColor(UIColor(white: 1.0, alpha: alpha).cgColor)
++                    context.setLineWidth(2.0)
++                    context.addLines(between: bolt.points)
++                    context.strokePath()
++                }
++            }
+         }
+-        GGSnowView.dots[diameter] = image
+-        return image
+     }
++}
+ 
+-    /// A CAEmitterCell needs a CGImage, and an SF Symbol has none (`cgImage` is nil for a symbol
+-    /// image): the bolt is rasterized once.
+-    private static func boltImage() -> UIImage? {
+-        if let image = GGSnowView.bolt {
+-            return image
+-        }
+-        let side: CGFloat = 14.0
+-        guard let symbol = UIImage(systemName: "bolt.fill", withConfiguration: UIImage.SymbolConfiguration(pointSize: 11.0, weight: .bold))?.withTintColor(.white, renderingMode: .alwaysOriginal) else {
+-            return nil
+-        }
+-        let format = UIGraphicsImageRendererFormat()
+-        format.opaque = false
+-        let image = UIGraphicsImageRenderer(size: CGSize(width: side, height: side), format: format).image { _ in
+-            let symbolSize = symbol.size
+-            symbol.draw(in: CGRect(x: (side - symbolSize.width) * 0.5, y: (side - symbolSize.height) * 0.5, width: symbolSize.width, height: symbolSize.height))
++private final class GGSnowProxy: NSObject {
++    private weak var view: GGSnowView?
++
++    init(view: GGSnowView) {
++        self.view = view
++        super.init()
++    }
++
++    @objc func tick(_ link: CADisplayLink) {
++        if let view = self.view {
++            view.step(link)
++        } else {
++            link.invalidate()
+         }
+-        GGSnowView.bolt = image
+-        return image
+     }
+ }
+ 
+diff --git a/Ghostgram/Features/Appearance/Sources/Menu/GGAppearanceMenu.swift b/Ghostgram/Features/Appearance/Sources/Menu/GGAppearanceMenu.swift
+index f411ef80..84d75df7 100644
+--- a/Ghostgram/Features/Appearance/Sources/Menu/GGAppearanceMenu.swift
++++ b/Ghostgram/Features/Appearance/Sources/Menu/GGAppearanceMenu.swift
+@@ -308,6 +308,7 @@ enum GGAppearanceMenu {
+         let main = GGMenuSectionID.main(of: tab)
+         GGMenuRegistry.register(GGMenuRow(id: "appearance.theme.amoled", section: main, order: 100, title: { GGStrings.Appearance.Theme.amoled }, subtitle: { GGStrings.Appearance.Theme.amoledInfo }, kind: .toggle(.global(GGAppearanceSettings.amoled)), searchKeywords: { [GGStrings.Appearance.Theme.amoledKeywords] }))
+         GGMenuRegistry.register(GGMenuRow(id: "appearance.theme.amoledKeyboard", section: main, order: 200, title: { GGStrings.Appearance.Theme.amoledKeyboard }, subtitle: { GGStrings.Appearance.Theme.amoledKeyboardInfo }, kind: .toggle(.global(GGAppearanceSettings.amoledKeyboard))))
++        GGMenuRegistry.register(GGMenuRow(id: "appearance.theme.msn", section: main, order: 250, title: { "MSN Messenger" }, subtitle: { "Небесно-голубое оформление в духе MSN Messenger 2005 (для светлой темы)" }, kind: .toggle(.global(GGAppearanceSettings.msnTheme))))
+         GGMenuRegistry.register(GGMenuRow(id: "appearance.theme.hideSeparators", section: main, order: 300, title: { GGStrings.Appearance.Theme.hideSeparators }, kind: .toggle(.global(GGAppearanceSettings.hideSeparators))))
+         GGMenuRegistry.register(GGMenuRow(id: "appearance.theme.nameSaturation", section: main, order: 400, title: { GGStrings.Appearance.Theme.nameSaturation }, subtitle: { GGStrings.Appearance.Theme.nameSaturationInfo }, kind: .slider(.global(GGAppearanceSettings.nameColorSaturation), range: 0.0 ... 100.0, step: 5.0, format: GGAppearanceMenu.percent)))
+ 
+@@ -349,7 +350,9 @@ enum GGAppearanceMenu {
+         GGMenuRegistry.register(GGMenuRow(id: "appearance.snow.enabled", section: GGAppearanceMenu.themeSnow, order: 100, title: { GGStrings.Appearance.Snow.enabled }, kind: .toggle(.global(GGAppearanceSettings.snow)), searchKeywords: { [GGStrings.Appearance.Snow.keywords] }))
+         GGMenuRegistry.register(GGMenuRow(id: "appearance.snow.style", section: GGAppearanceMenu.themeSnow, order: 200, title: { GGStrings.Appearance.Snow.style }, kind: .choice(.global(GGAppearanceSettings.snowStyle), options: [
+             GGMenuChoiceOption(value: GGSnowStyle.snow.rawValue, title: { GGStrings.Appearance.Snow.styleSnow }),
+-            GGMenuChoiceOption(value: GGSnowStyle.lightning.rawValue, title: { GGStrings.Appearance.Snow.styleLightning })
++            GGMenuChoiceOption(value: GGSnowStyle.lightning.rawValue, title: { GGStrings.Appearance.Snow.styleLightning }),
++            GGMenuChoiceOption(value: GGSnowStyle.rain.rawValue, title: { "Дождь" }),
++            GGMenuChoiceOption(value: GGSnowStyle.bubbles.rawValue, title: { "Пузырьки" })
+         ]), isVisible: snowOn))
+         GGMenuRegistry.register(GGMenuRow(id: "appearance.snow.intensity", section: GGAppearanceMenu.themeSnow, order: 300, title: { GGStrings.Appearance.Snow.intensity }, kind: .slider(.global(GGAppearanceSettings.snowIntensity), range: 10.0 ... 100.0, step: 5.0, format: GGAppearanceMenu.percent), isVisible: snowOn))
+         GGMenuRegistry.register(GGMenuRow(id: "appearance.snow.hideInChats", section: GGAppearanceMenu.themeSnow, order: 400, title: { GGStrings.Appearance.Snow.hideInChats }, kind: .toggle(.global(GGAppearanceSettings.snowHideInChats)), isVisible: snowOn))
+diff --git a/Ghostgram/Features/Appearance/Sources/Theme/GGAppearanceTheme.swift b/Ghostgram/Features/Appearance/Sources/Theme/GGAppearanceTheme.swift
+index 1e4d7c13..f6bdbf6d 100644
+--- a/Ghostgram/Features/Appearance/Sources/Theme/GGAppearanceTheme.swift
++++ b/Ghostgram/Features/Appearance/Sources/Theme/GGAppearanceTheme.swift
+@@ -131,6 +131,34 @@ enum GGAppearanceTheme {
+             inAppNotification = inAppNotification.withUpdated(fillColor: elevated)
+         }
+ 
++        if snapshot.msn && !source.overallDarkAppearance {
++            // The old MSN Messenger window: sky blue, white, a light-blue frame around everything.
++            let sky = UIColor(rgb: 0xe6f1fc)
++            let pale = UIColor(rgb: 0xf4f9fe)
++            let white = UIColor(rgb: 0xffffff)
++            let frame = UIColor(rgb: 0xcfe3f7)
++            let pinned = UIColor(rgb: 0xdcebfa)
++            let pressed = UIColor(rgb: 0xbfd9f2)
++
++            list = list.withUpdated(blocksBackgroundColor: sky, modalBlocksBackgroundColor: sky, plainBackgroundColor: pale, modalPlainBackgroundColor: pale, itemBlocksBackgroundColor: white)
++            chatList = chatList.withUpdated(backgroundColor: pale, itemBackgroundColor: pale, pinnedItemBackgroundColor: pinned, itemHighlightedBackgroundColor: pressed)
++            rootController = rootController.withUpdated(
++                tabBar: rootController.tabBar.withUpdated(backgroundColor: frame),
++                navigationBar: rootController.navigationBar.withUpdated(blurredBackgroundColor: frame.withAlphaComponent(0.92), opaqueBackgroundColor: frame),
++                navigationSearchBar: rootController.navigationSearchBar.withUpdated(backgroundColor: frame, inputFillColor: white)
++            )
++            chat = chat.withUpdated(inputPanel: chat.inputPanel.withUpdated(panelBackgroundColor: frame, panelBackgroundColorNoWallpaper: frame, inputBackgroundColor: white))
++            let message = chat.message
++            let stroke = UIColor(rgb: 0xa9c8e8)
++            let incomingBubble = message.incoming.bubble
++            chat = chat.withUpdated(message: message.withUpdated(
++                incoming: message.incoming.withUpdated(bubble: incomingBubble.withUpdated(
++                    withWallpaper: incomingBubble.withWallpaper.withUpdated(fill: [white], highlightedFill: sky, stroke: stroke),
++                    withoutWallpaper: incomingBubble.withoutWallpaper.withUpdated(fill: [white], highlightedFill: sky, stroke: stroke)
++                ))
++            ))
++        }
++
+         if snapshot.amoledKeyboard && source.overallDarkAppearance {
+             // The darkest system keyboard is `.dark`; the panels Telegram draws itself go black.
+             let black = UIColor(rgb: 0x000000)

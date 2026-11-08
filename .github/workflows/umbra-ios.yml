@@ -43,7 +43,6 @@ jobs:
           git apply --whitespace=nowarn ../patches/umbra-ios.patch
           git apply --whitespace=nowarn ../patches/umbra-plugins.patch
           git apply --whitespace=nowarn ../patches/umbra-banners.patch
-          # umbra-themes.patch was deleted in the repo on 2026-11-08; apply it only if it exists
           if [ -f ../patches/umbra-themes.patch ]; then git apply --whitespace=nowarn ../patches/umbra-themes.patch; fi
           # The fake provisioning profiles shipped with Ghostgram expired on 2026-10-30; the IPA is
           # re-signed with your own Apple ID anyway, so the expiry check is switched off.
