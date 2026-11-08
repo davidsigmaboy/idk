@@ -6,6 +6,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.verticalScroll
@@ -19,6 +20,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.ChatBubble
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -37,6 +40,7 @@ import org.drinkless.tdlib.TdApi
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         Td.start(this)
         val prefs = Prefs(this)
@@ -44,7 +48,15 @@ class MainActivity : ComponentActivity() {
         setContent {
             val dark = androidx.compose.foundation.isSystemInDarkTheme()
             val msn = prefs.theme == Themes.MSN
-            MaterialTheme(colorScheme = if (msn) Themes.msnColors() else if (dark) Tg.dark() else Tg.light()) {
+            MaterialTheme(
+                colorScheme = if (msn) Themes.msnColors() else if (dark) Tg.dark() else Tg.light(),
+                shapes = Shapes(
+                    small = RoundedCornerShape(12.dp),
+                    medium = RoundedCornerShape(18.dp),
+                    large = RoundedCornerShape(26.dp),
+                    extraLarge = RoundedCornerShape(32.dp)
+                )
+            ) {
                 Box(
                     Modifier.fillMaxSize().then(
                         if (msn) Modifier.background(Themes.msnBackground) else Modifier
@@ -354,7 +366,24 @@ private fun ChatList(repo: Repo, onOpen: (ChatItem) -> Unit, onSettings: () -> U
         }
     }
 
+    var query by remember { mutableStateOf("") }
     Scaffold(
+        bottomBar = {
+            NavigationBar {
+                NavigationBarItem(
+                    selected = true,
+                    onClick = {},
+                    icon = { Icon(androidx.compose.material.icons.Icons.Default.ChatBubble, contentDescription = null) },
+                    label = { Text("Chats") }
+                )
+                NavigationBarItem(
+                    selected = false,
+                    onClick = onSettings,
+                    icon = { Icon(Icons.Default.Settings, contentDescription = null) },
+                    label = { Text("Settings") }
+                )
+            }
+        },
         topBar = {
             TopAppBar(
                 title = {
@@ -377,11 +406,6 @@ private fun ChatList(repo: Repo, onOpen: (ChatItem) -> Unit, onSettings: () -> U
                         }
                     }
                 },
-                actions = {
-                    IconButton(onClick = onSettings) {
-                        Icon(Icons.Default.Settings, contentDescription = "Settings")
-                    }
-                },
                 colors = tgBarColors()
             )
         }
@@ -399,12 +423,29 @@ private fun ChatList(repo: Repo, onOpen: (ChatItem) -> Unit, onSettings: () -> U
             chats.isEmpty() -> Box(Modifier.fillMaxSize().padding(pad), contentAlignment = Alignment.Center) {
                 Text("No chats yet", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            else -> LazyColumn(Modifier.padding(pad)) {
-                error?.let {
-                    item { Text(it, Modifier.padding(16.dp), color = MaterialTheme.colorScheme.error) }
-                }
-                items(chats, key = { it.id }) { c ->
-                    ChatRow(c) { onOpen(c) }
+            else -> Column(Modifier.padding(pad)) {
+                TextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                    placeholder = { Text("Search") },
+                    leadingIcon = { Icon(androidx.compose.material.icons.Icons.Default.Search, contentDescription = null) },
+                    singleLine = true,
+                    shape = RoundedCornerShape(28.dp),
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+                        focusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                        unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent
+                    )
+                )
+                LazyColumn(Modifier.fillMaxSize()) {
+                    error?.let {
+                        item { Text(it, Modifier.padding(16.dp), color = MaterialTheme.colorScheme.error) }
+                    }
+                    items(chats.filter { query.isBlank() || it.title.contains(query, ignoreCase = true) }, key = { it.id }) { c ->
+                        ChatRow(c) { onOpen(c) }
+                    }
                 }
             }
         }
@@ -530,7 +571,7 @@ private fun ChatScreen(
                     }
                 }
                 Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp).imePadding(),
+                    Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 10.dp, vertical = 8.dp).imePadding(),
                     verticalAlignment = Alignment.Bottom
                 ) {
                     TextField(
@@ -539,10 +580,10 @@ private fun ChatScreen(
                         modifier = Modifier.weight(1f),
                         placeholder = { Text("Message") },
                         maxLines = 5,
-                        shape = RoundedCornerShape(24.dp),
+                        shape = RoundedCornerShape(28.dp),
                         colors = TextFieldDefaults.colors(
-                            focusedContainerColor = MaterialTheme.colorScheme.surface,
-                            unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                            focusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+                            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
                             focusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
                             unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent
                         )

@@ -186,9 +186,9 @@ fun ChatRow(chat: ChatItem, onClick: () -> Unit) {
 fun Bubble(m: MsgItem) {
     val out = m.outgoing
     val shape = RoundedCornerShape(
-        topStart = 14.dp, topEnd = 14.dp,
-        bottomStart = if (out) 14.dp else 4.dp,
-        bottomEnd = if (out) 4.dp else 14.dp
+        topStart = 20.dp, topEnd = 20.dp,
+        bottomStart = if (out) 20.dp else 6.dp,
+        bottomEnd = if (out) 6.dp else 20.dp
     )
     Row(
         Modifier.fillMaxWidth().padding(vertical = 2.dp),
