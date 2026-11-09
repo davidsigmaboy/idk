@@ -1,0 +1,59 @@
+name: Umbra Android (Nekogram interface)
+
+on:
+  workflow_dispatch:   # manual only
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    environment: "Random environment"
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    env:
+      NEKO_SHA: 199abde0f100d92cee8d925337561633e6e11186
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Telegram API secrets
+        env:
+          TG_API_ID: ${{ secrets.API_ID }}
+          TG_API_HASH: ${{ secrets.API_HASH }}
+        run: |
+          if [ -z "$TG_API_ID" ] || [ -z "$TG_API_HASH" ]; then
+            echo "::error::Add secrets API_ID and API_HASH to the environment (https://my.telegram.org)"; exit 1
+          fi
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 25 }
+      - name: Android SDK and NDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: "build-tools;37.0.0 ndk;27.3.13750724 platforms;android-37.0 cmake;3.22.1"
+      - name: Fetch Nekogram (interface base)
+        run: |
+          git clone --filter=blob:none https://github.com/Nekogram/Nekogram.git nekogram
+          cd nekogram
+          git checkout "$NEKO_SHA"
+          git submodule update --init --recursive --depth 1 --jobs 8
+      - name: Signing key
+        env:
+          TG_API_HASH: ${{ secrets.API_HASH }}
+        run: |
+          openssl enc -d -aes-256-cbc -pbkdf2 -pass env:TG_API_HASH -in umbra-android/umbra.jks.enc -out "$RUNNER_TEMP/umbra.jks"
+      - name: Umbra branding, keys and signing
+        env:
+          TG_API_ID: ${{ secrets.API_ID }}
+          TG_API_HASH: ${{ secrets.API_HASH }}
+          STOREPASS: 8d97ee1aef2c9ae3094aa51ffc334069
+        run: python3 scripts/neko_brand.py nekogram "$TG_API_ID" "$TG_API_HASH" "$RUNNER_TEMP/umbra.jks" "$STOREPASS" "$((2000 + GITHUB_RUN_NUMBER))"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build
+        working-directory: nekogram
+        run: |
+          mkdir -p ~/.gradle
+          echo 'org.gradle.jvmargs=-Xmx5g -Dfile.encoding=UTF-8' >> ~/.gradle/gradle.properties
+          ./gradlew --no-daemon :TMessagesProj_App:assembleRelease
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Umbra-neko-apk
+          path: nekogram/TMessagesProj_App/build/outputs/apk/release/Umbra.apk
