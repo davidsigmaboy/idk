@@ -40,6 +40,8 @@ jobs:
           TG_API_HASH: ${{ secrets.API_HASH }}
         run: |
           openssl enc -d -aes-256-cbc -pbkdf2 -pass env:TG_API_HASH -in umbra-android/umbra.jks.enc -out "$RUNNER_TEMP/umbra.jks"
+      - name: Pillow for icons
+        run: pip install --break-system-packages pillow || pip install pillow
       - name: Umbra branding, keys and signing
         env:
           TG_API_ID: ${{ secrets.API_ID }}

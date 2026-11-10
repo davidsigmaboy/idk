@@ -53,3 +53,136 @@ edit(app, sub("manifestPlaceholders = [MAPS_API_KEY: localProperties.get(\"mapsA
         "api_key": [{"current_key": "placeholder"}]}],
     "configuration_version": "1"}))
 print("branded")
+
+
+# ---- Umbra icon (replaces Nekogram's launcher icon) ----
+from PIL import Image
+res = root / "TMessagesProj/src/main/res"
+logo = Image.open(pathlib.Path(__file__).resolve().parent.parent / "branding/icon.jpg").convert("RGB")
+side = max(logo.size)
+square = Image.new("RGB", (side, side), (255, 255, 255))
+square.paste(logo, ((side - logo.width) // 2, (side - logo.height) // 2))
+for d, px in (("mdpi", 48), ("hdpi", 72), ("xhdpi", 96), ("xxhdpi", 144), ("xxxhdpi", 192)):
+    folder = res / f"mipmap-{d}"
+    assert folder.is_dir(), folder
+    for old in folder.glob("ic_launcher*"):
+        old.unlink()
+    square.resize((px, px), Image.LANCZOS).save(folder / "ic_launcher.png")
+big = square.resize((432, 432), Image.LANCZOS)
+(res / "drawable-nodpi").mkdir(exist_ok=True)
+big.save(res / "drawable-nodpi/umbra_logo.png")
+(res / "drawable/umbra_logo_fg.xml").write_text(
+    '<?xml version="1.0" encoding="utf-8"?>\n'
+    '<inset xmlns:android="http://schemas.android.com/apk/res/android" '
+    'android:drawable="@drawable/umbra_logo" android:inset="17%"/>\n')
+(res / "mipmap-anydpi-v26/ic_launcher.xml").write_text(
+    '<?xml version="1.0" encoding="utf-8"?>\n'
+    '<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">\n'
+    '    <background android:drawable="@color/umbra_white" />\n'
+    '    <foreground android:drawable="@drawable/umbra_logo_fg" />\n'
+    '</adaptive-icon>\n')
+(res / "values/umbra_colors.xml").write_text(
+    '<?xml version="1.0" encoding="utf-8"?>\n<resources><color name="umbra_white">#FFFFFF</color></resources>\n')
+
+# ---- crash screen: shows the error text instead of silently closing the app ----
+java = root / "TMessagesProj/src/main/java/app/umbra"
+java.mkdir(parents=True, exist_ok=True)
+(java / "CrashReporter.java").write_text(r"""package app.umbra;
+
+import android.app.Activity;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.Context;
+import android.content.Intent;
+import android.graphics.Typeface;
+import android.os.Bundle;
+import android.os.Process;
+import android.view.Gravity;
+import android.view.ViewGroup;
+import android.widget.Button;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
+import android.widget.TextView;
+
+import java.io.BufferedReader;
+import java.io.FileReader;
+import java.io.PrintWriter;
+import java.io.StringWriter;
+
+/** Umbra: if the app dies, show the error text on a screen that can be copied or photographed. */
+public final class CrashReporter {
+    private CrashReporter() {
+    }
+
+    public static boolean isCrashProcess() {
+        try (BufferedReader r = new BufferedReader(new FileReader("/proc/self/cmdline"))) {
+            String name = r.readLine();
+            return name != null && name.trim().endsWith(":crash");
+        } catch (Throwable ignore) {
+            return false;
+        }
+    }
+
+    public static void install(final Context context) {
+        if (isCrashProcess()) {
+            return;
+        }
+        final Thread.UncaughtExceptionHandler previous = Thread.getDefaultUncaughtExceptionHandler();
+        Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
+            try {
+                StringWriter sw = new StringWriter();
+                throwable.printStackTrace(new PrintWriter(sw));
+                Intent intent = new Intent(context, CrashActivity.class);
+                intent.putExtra("trace", sw.toString());
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+                context.startActivity(intent);
+                Thread.sleep(600);
+            } catch (Throwable ignore) {
+            }
+            if (previous != null) {
+                previous.uncaughtException(thread, throwable);
+            } else {
+                Process.killProcess(Process.myPid());
+            }
+        });
+    }
+
+    public static class CrashActivity extends Activity {
+        @Override
+        protected void onCreate(Bundle savedInstanceState) {
+            super.onCreate(savedInstanceState);
+            final String trace = getIntent().getStringExtra("trace");
+            LinearLayout root = new LinearLayout(this);
+            root.setOrientation(LinearLayout.VERTICAL);
+            root.setPadding(32, 64, 32, 32);
+            TextView title = new TextView(this);
+            title.setText("Umbra crashed. Tap Copy and send this text.");
+            title.setTextSize(18);
+            title.setTypeface(Typeface.DEFAULT_BOLD);
+            root.addView(title);
+            Button copy = new Button(this);
+            copy.setText("Copy");
+            copy.setOnClickListener(v -> {
+                ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                cm.setPrimaryClip(ClipData.newPlainText("crash", trace));
+            });
+            root.addView(copy);
+            ScrollView scroll = new ScrollView(this);
+            TextView text = new TextView(this);
+            text.setText(trace);
+            text.setTextSize(11);
+            text.setTypeface(Typeface.MONOSPACE);
+            text.setTextIsSelectable(true);
+            scroll.addView(text);
+            root.addView(scroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+            setContentView(root);
+        }
+    }
+}
+""")
+manifest = "TMessagesProj/src/main/AndroidManifest.xml"
+edit(manifest, sub("    </application>", '        <activity android:name="app.umbra.CrashReporter$CrashActivity" android:process=":crash" android:exported="false" android:excludeFromRecents="true" />\n    </application>'))
+loader = "TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java"
+edit(loader, sub("        super.attachBaseContext(base);\n        FirebaseFix.check(base);", "        super.attachBaseContext(base);\n        app.umbra.CrashReporter.install(base);\n        FirebaseFix.check(base);"))
+edit(loader, sub("    public void onCreate() {\n        applicationLoaderInstance = this;", "    public void onCreate() {\n        if (app.umbra.CrashReporter.isCrashProcess()) {\n            super.onCreate();\n            return;\n        }\n        applicationLoaderInstance = this;"))
+print("icon and crash screen added")
