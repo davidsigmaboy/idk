@@ -48,6 +48,8 @@ jobs:
           TG_API_HASH: ${{ secrets.API_HASH }}
           STOREPASS: 8d97ee1aef2c9ae3094aa51ffc334069
         run: python3 scripts/neko_brand.py nekogram "$TG_API_ID" "$TG_API_HASH" "$RUNNER_TEMP/umbra.jks" "$STOREPASS" "$((2000 + GITHUB_RUN_NUMBER))"
+      - name: Umbra features
+        run: python3 scripts/neko_features.py nekogram
       - uses: gradle/actions/setup-gradle@v4
       - name: Build
         working-directory: nekogram
