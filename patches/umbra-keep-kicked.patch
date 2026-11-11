@@ -1,0 +1,57 @@
+diff --git a/submodules/TelegramCore/Sources/State/AccountStateManagementUtils.swift b/submodules/TelegramCore/Sources/State/AccountStateManagementUtils.swift
+index d833d79f..31a16109 100644
+--- a/submodules/TelegramCore/Sources/State/AccountStateManagementUtils.swift
++++ b/submodules/TelegramCore/Sources/State/AccountStateManagementUtils.swift
+@@ -3070,6 +3070,8 @@ private func resolveMissingPeerChatInfos(accountPeerId: PeerId, network: Network
+                                                     switch group.membership {
+                                                     case .Member:
+                                                         break
++                                                    case .Removed:
++                                                        isExcludedFromChatList = !umbraKeepsRemovedChats()
+                                                     default:
+                                                         isExcludedFromChatList = true
+                                                     }
+@@ -3078,6 +3080,8 @@ private func resolveMissingPeerChatInfos(accountPeerId: PeerId, network: Network
+                                                 switch channel.participationStatus {
+                                                 case .member:
+                                                     break
++                                                case .kicked:
++                                                    isExcludedFromChatList = !umbraKeepsRemovedChats()
+                                                 default:
+                                                     isExcludedFromChatList = true
+                                                 }
+diff --git a/submodules/TelegramCore/Sources/UpdatePeers.swift b/submodules/TelegramCore/Sources/UpdatePeers.swift
+index ff2efda1..fa9e4faa 100644
+--- a/submodules/TelegramCore/Sources/UpdatePeers.swift
++++ b/submodules/TelegramCore/Sources/UpdatePeers.swift
+@@ -2,6 +2,12 @@ import Foundation
+ import Postbox
+ import TelegramApi
+ 
++/// Umbra: chats you were removed from (kicked) stay in the chat list with their saved messages.
++/// Leaving a chat yourself still removes it. UserDefaults key "umbra.keepKicked", on by default.
++func umbraKeepsRemovedChats() -> Bool {
++    return UserDefaults.standard.object(forKey: "umbra.keepKicked") as? Bool ?? true
++}
++
+ func isPeerHiddenByCollapsedCommunity(transaction: Transaction, peerId: PeerId, peer: Peer? = nil) -> Bool {
+     if let channel = (peer ?? transaction.getPeer(peerId)) as? TelegramChannel, let linkedCommunityId = channel.linkedCommunityId {
+         if let community = transaction.getPeer(linkedCommunityId) as? TelegramCommunity, community.collapsedInDialogs == true {
+@@ -24,6 +30,8 @@ func shouldExcludePeerFromChatList(transaction: Transaction, peerId: PeerId, pee
+         switch group.membership {
+         case .Member:
+             return false
++        case .Removed:
++            return !umbraKeepsRemovedChats()
+         default:
+             return true
+         }
+@@ -31,6 +39,8 @@ func shouldExcludePeerFromChatList(transaction: Transaction, peerId: PeerId, pee
+         switch channel.participationStatus {
+         case .member:
+             return isPeerHiddenByCollapsedCommunity(transaction: transaction, peerId: peerId, peer: channel)
++        case .kicked:
++            return !umbraKeepsRemovedChats()
+         default:
+             return true
+         }
