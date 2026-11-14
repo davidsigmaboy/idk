@@ -1,29 +1,33 @@
 --- a/Ghostgram/Features/Appearance/Settings/Sources/GGAppearanceSettings.swift
 +++ b/Ghostgram/Features/Appearance/Settings/Sources/GGAppearanceSettings.swift
-@@ -76,6 +76,8 @@
+@@ -76,6 +76,10 @@
      public static let amoledKeyboard = GGSetting<Bool>("appearance.theme.amoledKeyboard", default: false)
      /// Umbra: the sky-blue look of the old MSN Messenger (light themes).
      public static let msnTheme = GGSetting<Bool>("appearance.theme.msn", default: false)
 +    /// Umbra: falling pink poppies you can catch (off until switched on).
 +    public static let poppies = GGSetting<Bool>("appearance.theme.poppies", default: false)
++    /// %, 20…100: how visible the poppies, the pink tint and the edge flowers are.
++    public static let poppyOpacity = GGSetting<Double>("appearance.theme.poppyOpacity", default: 100.0)
      public static let hideSeparators = GGSetting<Bool>("appearance.theme.hideSeparators", default: false)
      /// %, 0…100; 100 = the server's colors.
      public static let nameColorSaturation = GGSetting<Double>("appearance.theme.nameSaturation", default: 100.0)
-@@ -162,6 +164,7 @@
+@@ -162,6 +166,8 @@
          let _ = GGAppearanceSettings.amoled
          let _ = GGAppearanceSettings.amoledKeyboard
          let _ = GGAppearanceSettings.msnTheme
 +        let _ = GGAppearanceSettings.poppies
++        let _ = GGAppearanceSettings.poppyOpacity
          let _ = GGAppearanceSettings.hideSeparators
          let _ = GGAppearanceSettings.nameColorSaturation
          let _ = GGAppearanceSettings.edgeStyle
 --- a/Ghostgram/Features/Appearance/Sources/Menu/GGAppearanceMenu.swift
 +++ b/Ghostgram/Features/Appearance/Sources/Menu/GGAppearanceMenu.swift
-@@ -309,6 +309,7 @@
+@@ -309,6 +309,8 @@
          GGMenuRegistry.register(GGMenuRow(id: "appearance.theme.amoled", section: main, order: 100, title: { GGStrings.Appearance.Theme.amoled }, subtitle: { GGStrings.Appearance.Theme.amoledInfo }, kind: .toggle(.global(GGAppearanceSettings.amoled)), searchKeywords: { [GGStrings.Appearance.Theme.amoledKeywords] }))
          GGMenuRegistry.register(GGMenuRow(id: "appearance.theme.amoledKeyboard", section: main, order: 200, title: { GGStrings.Appearance.Theme.amoledKeyboard }, subtitle: { GGStrings.Appearance.Theme.amoledKeyboardInfo }, kind: .toggle(.global(GGAppearanceSettings.amoledKeyboard))))
          GGMenuRegistry.register(GGMenuRow(id: "appearance.theme.msn", section: main, order: 250, title: { "MSN Messenger" }, subtitle: { "Небесно-голубое оформление в духе MSN Messenger 2005 (для светлой темы)" }, kind: .toggle(.global(GGAppearanceSettings.msnTheme))))
 +        GGMenuRegistry.register(GGMenuRow(id: "appearance.theme.poppies", section: main, order: 260, title: { "Маки" }, subtitle: { "Розовые маки падают по всему экрану. Нажимай на них: три пойманных собираются в корзинке в букет" }, kind: .toggle(.global(GGAppearanceSettings.poppies))))
++        GGMenuRegistry.register(GGMenuRow(id: "appearance.theme.poppyOpacity", section: main, order: 270, title: { "Прозрачность маков" }, kind: .slider(.global(GGAppearanceSettings.poppyOpacity), range: 20.0 ... 100.0, step: 10.0, format: GGAppearanceMenu.percent)))
          GGMenuRegistry.register(GGMenuRow(id: "appearance.theme.hideSeparators", section: main, order: 300, title: { GGStrings.Appearance.Theme.hideSeparators }, kind: .toggle(.global(GGAppearanceSettings.hideSeparators))))
          GGMenuRegistry.register(GGMenuRow(id: "appearance.theme.nameSaturation", section: main, order: 400, title: { GGStrings.Appearance.Theme.nameSaturation }, subtitle: { GGStrings.Appearance.Theme.nameSaturationInfo }, kind: .slider(.global(GGAppearanceSettings.nameColorSaturation), range: 0.0 ... 100.0, step: 5.0, format: GGAppearanceMenu.percent)))
  
@@ -39,7 +43,7 @@
          GGAppearanceMenu.register()
 --- /dev/null
 +++ b/Ghostgram/Features/Appearance/Sources/Chat/UmbraPoppies.swift
-@@ -0,0 +1,265 @@
+@@ -0,0 +1,323 @@
 +import Foundation
 +import UIKit
 +import GGAppearanceSettings
@@ -78,12 +82,26 @@
 +    private var untilNext: CGFloat = 0.4
 +    private let basket = UILabel()
 +    private var inBasket = 0
++    private let tint = UIView()
++    private let leftEdge = UIImageView()
++    private let rightEdge = UIImageView()
++    private var edgeHeight: CGFloat = 0.0
++    private var opacity: CGFloat = 1.0
 +
 +    override init(frame: CGRect) {
 +        super.init(frame: frame)
 +        self.isOpaque = false
 +        self.backgroundColor = .clear
 +        self.autoresizingMask = [.flexibleWidth, .flexibleHeight]
++        // The interface turns a little pink, and poppies stand along both sides of the screen.
++        self.tint.backgroundColor = UIColor(red: 1.0, green: 0.44, blue: 0.66, alpha: 1.0)
++        self.tint.isUserInteractionEnabled = false
++        self.addSubview(self.tint)
++        self.leftEdge.contentMode = .topLeft
++        self.rightEdge.contentMode = .topRight
++        self.addSubview(self.leftEdge)
++        self.addSubview(self.rightEdge)
++        self.applyOpacity()
 +        self.basket.numberOfLines = 1
 +        self.basket.textAlignment = .center
 +        self.basket.font = UIFont.systemFont(ofSize: 15.0, weight: .semibold)
@@ -119,8 +137,49 @@
 +        }
 +    }
 +
++    private func applyOpacity() {
++        let value = CGFloat(min(100.0, max(20.0, GGAppearanceSettings.poppyOpacity.value))) / 100.0
++        self.opacity = value
++        self.tint.alpha = 0.12 * value
++        self.leftEdge.alpha = 0.55 * value
++        self.rightEdge.alpha = 0.55 * value
++    }
++
++    private static func drawEdge(height: CGFloat, mirrored: Bool) -> UIImage {
++        let stripWidth: CGFloat = 76.0
++        let renderer = UIGraphicsImageRenderer(size: CGSize(width: stripWidth, height: max(1.0, height)))
++        var seed: UInt64 = mirrored ? 11 : 7
++        func next() -> CGFloat {
++            seed = seed &* 6364136223846793005 &+ 1442695040888963407
++            return CGFloat((seed >> 33) % 1000) / 1000.0
++        }
++        return renderer.image { context in
++            let count = max(4, Int(height / 110.0))
++            for index in 0 ..< count {
++                let size = 56.0 + next() * 40.0
++                let y = (CGFloat(index) + 0.3 + next() * 0.5) * height / CGFloat(count)
++                let jitter = -10.0 + next() * 30.0
++                let x = mirrored ? stripWidth - jitter : jitter
++                let cg = context.cgContext
++                cg.saveGState()
++                cg.translateBy(x: x, y: y)
++                cg.rotate(by: next() * 2.0 * .pi)
++                UmbraPoppyOverlay.image.draw(in: CGRect(x: -size / 2.0, y: -size / 2.0, width: size, height: size))
++                cg.restoreGState()
++            }
++        }
++    }
++
 +    override func layoutSubviews() {
 +        super.layoutSubviews()
++        self.tint.frame = self.bounds
++        if abs(self.edgeHeight - self.bounds.height) > 1.0 && self.bounds.height > 10.0 {
++            self.edgeHeight = self.bounds.height
++            self.leftEdge.image = UmbraPoppyOverlay.drawEdge(height: self.bounds.height, mirrored: false)
++            self.rightEdge.image = UmbraPoppyOverlay.drawEdge(height: self.bounds.height, mirrored: true)
++        }
++        self.leftEdge.frame = CGRect(x: 0.0, y: 0.0, width: 76.0, height: self.bounds.height)
++        self.rightEdge.frame = CGRect(x: self.bounds.width - 76.0, y: 0.0, width: 76.0, height: self.bounds.height)
 +        let width: CGFloat = 132.0
 +        self.basket.frame = CGRect(x: self.bounds.width - width - 12.0, y: self.bounds.height - self.safeAreaInsets.bottom - 112.0, width: width, height: 36.0)
 +        self.bringSubviewToFront(self.basket)
@@ -193,6 +252,7 @@
 +        if UIAccessibility.isReduceMotionEnabled {
 +            return
 +        }
++        self.applyOpacity()
 +        let dt: CGFloat = self.lastTimestamp == 0.0 ? 0.033 : CGFloat(min(0.1, link.timestamp - self.lastTimestamp))
 +        self.lastTimestamp = link.timestamp
 +        let width = self.bounds.width
@@ -206,6 +266,7 @@
 +            self.untilNext = CGFloat.random(in: 1.0 ... 2.2)
 +            let size = CGFloat.random(in: 44.0 ... 64.0)
 +            let view = UIImageView(image: UmbraPoppyOverlay.image)
++            view.alpha = self.opacity
 +            view.bounds = CGRect(x: 0.0, y: 0.0, width: size, height: size)
 +            view.isUserInteractionEnabled = false
 +            let x = CGFloat.random(in: 30.0 ... max(31.0, width - 30.0))
@@ -220,6 +281,7 @@
 +            flower.age += dt
 +            flower.y += flower.speed * dt
 +            let drift = sin(flower.age * 1.3 + flower.phase) * flower.sway
++            flower.view.alpha = self.opacity
 +            flower.view.center = CGPoint(x: flower.x + drift, y: flower.y)
 +            flower.view.transform = CGAffineTransform(rotationAngle: sin(flower.age * 0.9 + flower.phase) * 0.5 + flower.spin * flower.age * 0.2)
 +            if flower.y > height + 50.0 {

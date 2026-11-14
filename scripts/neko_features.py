@@ -102,6 +102,15 @@ public final class UmbraPoppies {
         return prefs().getBoolean("poppies", false);
     }
 
+    /** Poppy opacity in percent, 20..100. */
+    public static int opacity() {
+        return Math.max(20, Math.min(100, prefs().getInt("poppy_opacity", 100)));
+    }
+
+    public static void setOpacity(int percent) {
+        prefs().edit().putInt("poppy_opacity", percent).apply();
+    }
+
     public static void setEnabled(boolean enabled) {
         prefs().edit().putBoolean("poppies", enabled).apply();
         refresh();
@@ -161,6 +170,38 @@ public final class UmbraPoppies {
         private float untilNext = 0.4f;
         private int inBasket;
         private long bouquetShownUntil;
+        private Bitmap edgeLeft;
+        private Bitmap edgeRight;
+        private int edgeFor;
+
+        /** Two strips of poppies along the left and right edges of the screen (drawn once per size). */
+        private void buildEdges(int w, int h) {
+            edgeFor = w * 31 + h;
+            int stripW = (int) (74 * density);
+            edgeLeft = Bitmap.createBitmap(stripW, Math.max(1, h), Bitmap.Config.ARGB_8888);
+            edgeRight = Bitmap.createBitmap(stripW, Math.max(1, h), Bitmap.Config.ARGB_8888);
+            Canvas left = new Canvas(edgeLeft);
+            Canvas right = new Canvas(edgeRight);
+            Random r = new Random(7);
+            Paint p = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+            Matrix m = new Matrix();
+            int count = Math.max(4, (int) (h / (110 * density)));
+            for (int side = 0; side < 2; side++) {
+                Canvas c = side == 0 ? left : right;
+                for (int i = 0; i < count; i++) {
+                    float size = (56 + r.nextFloat() * 40) * density;
+                    float y = (i + 0.3f + r.nextFloat() * 0.5f) * h / count;
+                    float x = side == 0 ? (-10 + r.nextFloat() * 30) * density : stripW - (-10 + r.nextFloat() * 30) * density;
+                    float scale = size / poppy.getWidth();
+                    m.reset();
+                    m.postTranslate(-poppy.getWidth() / 2f, -poppy.getHeight() / 2f);
+                    m.postScale(scale, scale);
+                    m.postRotate(r.nextFloat() * 360f);
+                    m.postTranslate(x, y);
+                    c.drawBitmap(poppy, m, p);
+                }
+            }
+        }
 
         PoppyView(Context context) {
             super(context);
@@ -222,7 +263,16 @@ public final class UmbraPoppies {
             float dt = last == 0 ? 0.016f : Math.min(0.1f, (now - last) / 1_000_000_000f);
             last = now;
             int w = getWidth(), h = getHeight();
+            float op = opacity() / 100f;
             if (w > 0) {
+                // The whole interface turns a little pink.
+                canvas.drawColor(((int) (0x20 * op) << 24) | 0xFF6FA8);
+                if (edgeLeft == null || edgeFor != w * 31 + h) {
+                    buildEdges(w, h);
+                }
+                paint.setAlpha((int) (255 * 0.55f * op));
+                canvas.drawBitmap(edgeLeft, 0, 0, paint);
+                canvas.drawBitmap(edgeRight, w - edgeRight.getWidth(), 0, paint);
                 untilNext -= dt;
                 if (untilNext <= 0 && flowers.size() < 9) {
                     untilNext = 1.0f + random.nextFloat() * 1.2f;
@@ -271,7 +321,7 @@ public final class UmbraPoppies {
             matrix.postScale(scale, scale);
             matrix.postRotate((float) Math.toDegrees(Math.sin(age * 0.9f + spin) * 0.5f + spin * age * 0.2f));
             matrix.postTranslate(x, y);
-            paint.setAlpha((int) (255 * Math.max(0f, alpha)));
+            paint.setAlpha((int) (255 * Math.max(0f, alpha) * opacity() / 100f));
             canvas.drawBitmap(poppy, matrix, paint);
         }
 
@@ -339,13 +389,50 @@ launch = "TMessagesProj/src/main/java/org/telegram/ui/LaunchActivity.java"
 settings = "TMessagesProj/src/main/java/tw/nekomimi/nekogram/settings/NekoAppearanceSettingsActivity.java"
 
 edit(launch, "    protected void onResume() {\n", "    protected void onResume() {\n        app.umbra.UmbraPoppies.attach(this);\n")
-edit(settings, "    private final int strokeOnViewsRow = rowId++;\n", "    private final int strokeOnViewsRow = rowId++;\n    private final int umbraPoppiesRow = rowId++;\n    private final int umbraKeepKickedRow = rowId++;\n")
+edit(settings, "    private final int strokeOnViewsRow = rowId++;\n",
+     "    private final int strokeOnViewsRow = rowId++;\n"
+     "    private final int umbraPoppiesRow = rowId++;\n"
+     "    private final int umbraPoppyOpacityRow = rowId++;\n"
+     "    private final int umbraKeepKickedRow = rowId++;\n")
 edit(settings, "        items.add(UItem.asShadow(null));\n\n    }\n\n    @Override\n    protected void onItemClick",
-     "        items.add(UItem.asShadow(null));\n\n        items.add(UItem.asHeader(\"Umbra\"));\n"
-     "        items.add(UItem.asCheck(umbraPoppiesRow, \"Тема «Маки»\", \"Розовые маки падают по всему экрану. Нажимай на них: три пойманных собираются в букет\").setChecked(app.umbra.UmbraPoppies.isEnabled()));\n"
-     "        items.add(UItem.asCheck(umbraKeepKickedRow, \"Хранить чаты, откуда кикнули\", \"Чат остаётся в списке с уже сохранёнными сообщениями\").setChecked(app.umbra.KeepKicked.enabled()));\n"
-     "        items.add(UItem.asShadow(null));\n\n    }\n\n    @Override\n    protected void onItemClick")
+     """        items.add(UItem.asShadow(null));
+
+        items.add(UItem.asHeader("Umbra"));
+        items.add(UItem.asCheck(umbraPoppiesRow, "Тема «Маки»", "Розовые маки падают по всему экрану, интерфейс розовеет, по краям цветы. Нажимай на маки: три пойманных собираются в букет").setChecked(app.umbra.UmbraPoppies.isEnabled()));
+        items.add(TextSettingsCellFactory.of(umbraPoppyOpacityRow, "Прозрачность маков", app.umbra.UmbraPoppies.opacity() + "%"));
+        items.add(UItem.asCheck(umbraKeepKickedRow, "Хранить чаты, откуда кикнули", "Чат остаётся в списке с уже сохранёнными сообщениями").setChecked(app.umbra.KeepKicked.enabled()));
+        items.add(UItem.asShadow(null));
+
+    }
+
+    @Override
+    protected void onItemClick""")
 edit(settings, "        var id = item.id;\n        if (id == tabletModeRow) {",
-     "        var id = item.id;\n        if (id == umbraPoppiesRow) {\n            app.umbra.UmbraPoppies.setEnabled(!app.umbra.UmbraPoppies.isEnabled());\n            if (view instanceof TextCheckCell) {\n                ((TextCheckCell) view).setChecked(app.umbra.UmbraPoppies.isEnabled());\n            }\n        } else if (id == umbraKeepKickedRow) {\n            app.umbra.KeepKicked.setEnabled(!app.umbra.KeepKicked.enabled());\n            if (view instanceof TextCheckCell) {\n                ((TextCheckCell) view).setChecked(app.umbra.KeepKicked.enabled());\n            }\n        } else if (id == tabletModeRow) {")
+     """        var id = item.id;
+        if (id == umbraPoppiesRow) {
+            app.umbra.UmbraPoppies.setEnabled(!app.umbra.UmbraPoppies.isEnabled());
+            if (view instanceof TextCheckCell) {
+                ((TextCheckCell) view).setChecked(app.umbra.UmbraPoppies.isEnabled());
+            }
+        } else if (id == umbraPoppyOpacityRow) {
+            ArrayList<String> labels = new ArrayList<>();
+            final int[] values = {100, 80, 60, 40, 20};
+            int selected = 0;
+            for (int i = 0; i < values.length; i++) {
+                labels.add(values[i] + "%");
+                if (values[i] == app.umbra.UmbraPoppies.opacity()) {
+                    selected = i;
+                }
+            }
+            showPopup(labels, selected, item, view, i -> {
+                app.umbra.UmbraPoppies.setOpacity(values[i]);
+                listView.adapter.notifyItemChanged(position, PARTIAL);
+            });
+        } else if (id == umbraKeepKickedRow) {
+            app.umbra.KeepKicked.setEnabled(!app.umbra.KeepKicked.enabled());
+            if (view instanceof TextCheckCell) {
+                ((TextCheckCell) view).setChecked(app.umbra.KeepKicked.enabled());
+            }
+        } else if (id == tabletModeRow) {""")
 
 print("features applied")
