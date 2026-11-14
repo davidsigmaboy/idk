@@ -1,0 +1,307 @@
+--- a/Ghostgram/Features/Appearance/Settings/Sources/GGAppearanceSettings.swift
++++ b/Ghostgram/Features/Appearance/Settings/Sources/GGAppearanceSettings.swift
+@@ -76,6 +76,8 @@
+     public static let amoledKeyboard = GGSetting<Bool>("appearance.theme.amoledKeyboard", default: false)
+     /// Umbra: the sky-blue look of the old MSN Messenger (light themes).
+     public static let msnTheme = GGSetting<Bool>("appearance.theme.msn", default: false)
++    /// Umbra: falling pink poppies you can catch (off until switched on).
++    public static let poppies = GGSetting<Bool>("appearance.theme.poppies", default: false)
+     public static let hideSeparators = GGSetting<Bool>("appearance.theme.hideSeparators", default: false)
+     /// %, 0…100; 100 = the server's colors.
+     public static let nameColorSaturation = GGSetting<Double>("appearance.theme.nameSaturation", default: 100.0)
+@@ -162,6 +164,7 @@
+         let _ = GGAppearanceSettings.amoled
+         let _ = GGAppearanceSettings.amoledKeyboard
+         let _ = GGAppearanceSettings.msnTheme
++        let _ = GGAppearanceSettings.poppies
+         let _ = GGAppearanceSettings.hideSeparators
+         let _ = GGAppearanceSettings.nameColorSaturation
+         let _ = GGAppearanceSettings.edgeStyle
+--- a/Ghostgram/Features/Appearance/Sources/Menu/GGAppearanceMenu.swift
++++ b/Ghostgram/Features/Appearance/Sources/Menu/GGAppearanceMenu.swift
+@@ -309,6 +309,7 @@
+         GGMenuRegistry.register(GGMenuRow(id: "appearance.theme.amoled", section: main, order: 100, title: { GGStrings.Appearance.Theme.amoled }, subtitle: { GGStrings.Appearance.Theme.amoledInfo }, kind: .toggle(.global(GGAppearanceSettings.amoled)), searchKeywords: { [GGStrings.Appearance.Theme.amoledKeywords] }))
+         GGMenuRegistry.register(GGMenuRow(id: "appearance.theme.amoledKeyboard", section: main, order: 200, title: { GGStrings.Appearance.Theme.amoledKeyboard }, subtitle: { GGStrings.Appearance.Theme.amoledKeyboardInfo }, kind: .toggle(.global(GGAppearanceSettings.amoledKeyboard))))
+         GGMenuRegistry.register(GGMenuRow(id: "appearance.theme.msn", section: main, order: 250, title: { "MSN Messenger" }, subtitle: { "Небесно-голубое оформление в духе MSN Messenger 2005 (для светлой темы)" }, kind: .toggle(.global(GGAppearanceSettings.msnTheme))))
++        GGMenuRegistry.register(GGMenuRow(id: "appearance.theme.poppies", section: main, order: 260, title: { "Маки" }, subtitle: { "Розовые маки падают по всему экрану. Нажимай на них: три пойманных собираются в корзинке в букет" }, kind: .toggle(.global(GGAppearanceSettings.poppies))))
+         GGMenuRegistry.register(GGMenuRow(id: "appearance.theme.hideSeparators", section: main, order: 300, title: { GGStrings.Appearance.Theme.hideSeparators }, kind: .toggle(.global(GGAppearanceSettings.hideSeparators))))
+         GGMenuRegistry.register(GGMenuRow(id: "appearance.theme.nameSaturation", section: main, order: 400, title: { GGStrings.Appearance.Theme.nameSaturation }, subtitle: { GGStrings.Appearance.Theme.nameSaturationInfo }, kind: .slider(.global(GGAppearanceSettings.nameColorSaturation), range: 0.0 ... 100.0, step: 5.0, format: GGAppearanceMenu.percent)))
+ 
+--- a/Ghostgram/Features/Appearance/Sources/GGAppearanceModule.swift
++++ b/Ghostgram/Features/Appearance/Sources/GGAppearanceModule.swift
+@@ -23,6 +23,7 @@
+         GGChatListDecor.register()
+         GGProfileDecor.register()
+         UmbraBannerDecor.register()
++        UmbraPoppies.start()
+         GGAppearancePendingPoints.register()
+ 
+         GGAppearanceMenu.register()
+--- /dev/null
++++ b/Ghostgram/Features/Appearance/Sources/Chat/UmbraPoppies.swift
+@@ -0,0 +1,265 @@
++import Foundation
++import UIKit
++import GGAppearanceSettings
++
++/// Umbra "Poppies" theme: pink poppies fall over the whole app. Tap one to catch it; three caught
++/// poppies fill the basket and make a bouquet. Off by default, switched on in Appearance settings.
++final class UmbraPoppyOverlay: UIView {
++    private final class Flower {
++        let view: UIImageView
++        var x: CGFloat
++        var y: CGFloat
++        let speed: CGFloat
++        let sway: CGFloat
++        let phase: CGFloat
++        let spin: CGFloat
++        var age: CGFloat = 0.0
++        var caught = false
++
++        init(view: UIImageView, x: CGFloat, y: CGFloat, speed: CGFloat, sway: CGFloat, phase: CGFloat, spin: CGFloat) {
++            self.view = view
++            self.x = x
++            self.y = y
++            self.speed = speed
++            self.sway = sway
++            self.phase = phase
++            self.spin = spin
++        }
++    }
++
++    private static let bouquetsKey = "umbra.poppy.bouquets"
++    private static let image: UIImage = UmbraPoppyOverlay.drawPoppy(size: 96.0)
++
++    private var flowers: [Flower] = []
++    private var link: CADisplayLink?
++    private var lastTimestamp: CFTimeInterval = 0.0
++    private var untilNext: CGFloat = 0.4
++    private let basket = UILabel()
++    private var inBasket = 0
++
++    override init(frame: CGRect) {
++        super.init(frame: frame)
++        self.isOpaque = false
++        self.backgroundColor = .clear
++        self.autoresizingMask = [.flexibleWidth, .flexibleHeight]
++        self.basket.numberOfLines = 1
++        self.basket.textAlignment = .center
++        self.basket.font = UIFont.systemFont(ofSize: 15.0, weight: .semibold)
++        self.basket.textColor = UIColor(red: 0.62, green: 0.1, blue: 0.33, alpha: 1.0)
++        self.basket.backgroundColor = UIColor(red: 1.0, green: 0.9, blue: 0.94, alpha: 0.92)
++        self.basket.layer.cornerRadius = 18.0
++        self.basket.layer.masksToBounds = true
++        self.addSubview(self.basket)
++        self.updateBasket()
++    }
++
++    required init?(coder: NSCoder) {
++        preconditionFailure()
++    }
++
++    deinit {
++        self.link?.invalidate()
++    }
++
++    override func didMoveToWindow() {
++        super.didMoveToWindow()
++        if self.window != nil {
++            if self.link == nil {
++                let link = CADisplayLink(target: self, selector: #selector(self.tick(_:)))
++                link.preferredFramesPerSecond = 30
++                link.add(to: .main, forMode: .common)
++                self.link = link
++                self.lastTimestamp = 0.0
++            }
++        } else {
++            self.link?.invalidate()
++            self.link = nil
++        }
++    }
++
++    override func layoutSubviews() {
++        super.layoutSubviews()
++        let width: CGFloat = 132.0
++        self.basket.frame = CGRect(x: self.bounds.width - width - 12.0, y: self.bounds.height - self.safeAreaInsets.bottom - 112.0, width: width, height: 36.0)
++        self.bringSubviewToFront(self.basket)
++    }
++
++    /// Only flowers take touches; everything else falls through to the app below.
++    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
++        for flower in self.flowers.reversed() where !flower.caught {
++            let center = CGPoint(x: flower.x, y: flower.y)
++            let dx = point.x - center.x
++            let dy = point.y - center.y
++            if dx * dx + dy * dy <= 34.0 * 34.0 {
++                return self
++            }
++        }
++        return nil
++    }
++
++    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
++        guard let point = touches.first?.location(in: self) else {
++            return
++        }
++        for flower in self.flowers.reversed() where !flower.caught {
++            let dx = point.x - flower.x
++            let dy = point.y - flower.y
++            if dx * dx + dy * dy <= 34.0 * 34.0 {
++                self.catchFlower(flower)
++                return
++            }
++        }
++    }
++
++    private func catchFlower(_ flower: Flower) {
++        flower.caught = true
++        let target = CGPoint(x: self.basket.center.x, y: self.basket.center.y)
++        UIView.animate(withDuration: 0.35, delay: 0.0, options: [.curveEaseIn], animations: {
++            flower.view.center = target
++            flower.view.transform = CGAffineTransform(scaleX: 0.25, y: 0.25)
++            flower.view.alpha = 0.0
++        }, completion: { [weak self] _ in
++            flower.view.removeFromSuperview()
++            self?.flowers.removeAll(where: { $0 === flower })
++        })
++        UIImpactFeedbackGenerator(style: .light).impactOccurred()
++        self.inBasket += 1
++        if self.inBasket >= 3 {
++            self.inBasket = 0
++            let total = UserDefaults.standard.integer(forKey: UmbraPoppyOverlay.bouquetsKey) + 1
++            UserDefaults.standard.set(total, forKey: UmbraPoppyOverlay.bouquetsKey)
++            self.basket.text = "💐 Букет собран! ×\(total)"
++            self.basket.transform = CGAffineTransform(scaleX: 1.15, y: 1.15)
++            UIView.animate(withDuration: 0.4, delay: 0.0, usingSpringWithDamping: 0.5, initialSpringVelocity: 0.0, options: [], animations: {
++                self.basket.transform = .identity
++            }, completion: nil)
++            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
++                self?.updateBasket()
++            }
++        } else {
++            self.updateBasket()
++        }
++    }
++
++    private func updateBasket() {
++        let total = UserDefaults.standard.integer(forKey: UmbraPoppyOverlay.bouquetsKey)
++        let dots = String(repeating: "🌺", count: self.inBasket) + String(repeating: "·", count: 3 - self.inBasket)
++        self.basket.text = "🧺 \(dots)" + (total > 0 ? "  💐\(total)" : "")
++    }
++
++    @objc private func tick(_ link: CADisplayLink) {
++        if UIAccessibility.isReduceMotionEnabled {
++            return
++        }
++        let dt: CGFloat = self.lastTimestamp == 0.0 ? 0.033 : CGFloat(min(0.1, link.timestamp - self.lastTimestamp))
++        self.lastTimestamp = link.timestamp
++        let width = self.bounds.width
++        let height = self.bounds.height
++        if width < 10.0 {
++            return
++        }
++
++        self.untilNext -= dt
++        if self.untilNext <= 0.0 && self.flowers.count < 9 {
++            self.untilNext = CGFloat.random(in: 1.0 ... 2.2)
++            let size = CGFloat.random(in: 44.0 ... 64.0)
++            let view = UIImageView(image: UmbraPoppyOverlay.image)
++            view.bounds = CGRect(x: 0.0, y: 0.0, width: size, height: size)
++            view.isUserInteractionEnabled = false
++            let x = CGFloat.random(in: 30.0 ... max(31.0, width - 30.0))
++            let flower = Flower(view: view, x: x, y: -40.0, speed: CGFloat.random(in: 55.0 ... 110.0), sway: CGFloat.random(in: 12.0 ... 34.0), phase: CGFloat.random(in: 0.0 ... 6.28), spin: CGFloat.random(in: -0.8 ... 0.8))
++            view.center = CGPoint(x: x, y: -40.0)
++            self.insertSubview(view, belowSubview: self.basket)
++            self.flowers.append(flower)
++        }
++
++        var gone: [Flower] = []
++        for flower in self.flowers where !flower.caught {
++            flower.age += dt
++            flower.y += flower.speed * dt
++            let drift = sin(flower.age * 1.3 + flower.phase) * flower.sway
++            flower.view.center = CGPoint(x: flower.x + drift, y: flower.y)
++            flower.view.transform = CGAffineTransform(rotationAngle: sin(flower.age * 0.9 + flower.phase) * 0.5 + flower.spin * flower.age * 0.2)
++            if flower.y > height + 50.0 {
++                gone.append(flower)
++            }
++        }
++        for flower in gone {
++            flower.view.removeFromSuperview()
++            self.flowers.removeAll(where: { $0 === flower })
++        }
++    }
++
++    /// A pink poppy: five soft petals, a light throat, a dark centre ringed with stamens.
++    private static func drawPoppy(size: CGFloat) -> UIImage {
++        let renderer = UIGraphicsImageRenderer(size: CGSize(width: size, height: size))
++        return renderer.image { context in
++            let cg = context.cgContext
++            let center = CGPoint(x: size / 2.0, y: size / 2.0)
++            let petalW = size * 0.46
++            let petalH = size * 0.5
++            for index in 0 ..< 5 {
++                cg.saveGState()
++                cg.translateBy(x: center.x, y: center.y)
++                cg.rotate(by: CGFloat(index) * (2.0 * .pi / 5.0) - .pi / 2.0)
++                let rect = CGRect(x: -petalW / 2.0, y: -petalH * 0.92, width: petalW, height: petalH)
++                let path = UIBezierPath(ovalIn: rect)
++                UIColor(red: 1.0, green: 0.55, blue: 0.72, alpha: 1.0).setFill()
++                path.fill()
++                let inner = UIBezierPath(ovalIn: rect.insetBy(dx: petalW * 0.16, dy: petalH * 0.14).offsetBy(dx: 0.0, dy: petalH * 0.06))
++                UIColor(red: 1.0, green: 0.72, blue: 0.84, alpha: 0.9).setFill()
++                inner.fill()
++                UIColor(red: 0.92, green: 0.33, blue: 0.58, alpha: 0.7).setStroke()
++                path.lineWidth = 1.2
++                path.stroke()
++                cg.restoreGState()
++            }
++            UIColor(red: 1.0, green: 0.85, blue: 0.92, alpha: 1.0).setFill()
++            UIBezierPath(ovalIn: CGRect(x: center.x - size * 0.13, y: center.y - size * 0.13, width: size * 0.26, height: size * 0.26)).fill()
++            UIColor(red: 0.2, green: 0.08, blue: 0.16, alpha: 1.0).setFill()
++            UIBezierPath(ovalIn: CGRect(x: center.x - size * 0.07, y: center.y - size * 0.07, width: size * 0.14, height: size * 0.14)).fill()
++            for index in 0 ..< 10 {
++                let angle = CGFloat(index) * (2.0 * .pi / 10.0)
++                let dot = CGPoint(x: center.x + cos(angle) * size * 0.11, y: center.y + sin(angle) * size * 0.11)
++                UIBezierPath(ovalIn: CGRect(x: dot.x - 1.6, y: dot.y - 1.6, width: 3.2, height: 3.2)).fill()
++            }
++        }
++    }
++}
++
++/// Puts the overlay on the app window while the setting is on; checked once a second.
++enum UmbraPoppies {
++    private static var timer: Timer?
++    private static var overlay: UmbraPoppyOverlay?
++
++    static func start() {
++        guard self.timer == nil else {
++            return
++        }
++        self.timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true, block: { _ in
++            UmbraPoppies.sync()
++        })
++    }
++
++    private static func sync() {
++        let enabled = GGAppearanceSettings.poppies.value
++        if enabled {
++            if let overlay = self.overlay, overlay.superview != nil {
++                if let window = overlay.window {
++                    window.bringSubviewToFront(overlay)
++                }
++                return
++            }
++            let windows = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap { $0.windows }
++            guard let window = windows.first(where: { $0.isKeyWindow }) ?? windows.first else {
++                return
++            }
++            let overlay = UmbraPoppyOverlay(frame: window.bounds)
++            window.addSubview(overlay)
++            self.overlay = overlay
++        } else if let overlay = self.overlay {
++            overlay.removeFromSuperview()
++            self.overlay = nil
++        }
++    }
++}
