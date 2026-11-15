@@ -1,33 +1,37 @@
 --- a/Ghostgram/Features/Appearance/Settings/Sources/GGAppearanceSettings.swift
 +++ b/Ghostgram/Features/Appearance/Settings/Sources/GGAppearanceSettings.swift
-@@ -76,6 +76,10 @@
+@@ -76,6 +76,12 @@
      public static let amoledKeyboard = GGSetting<Bool>("appearance.theme.amoledKeyboard", default: false)
      /// Umbra: the sky-blue look of the old MSN Messenger (light themes).
      public static let msnTheme = GGSetting<Bool>("appearance.theme.msn", default: false)
 +    /// Umbra: falling pink poppies you can catch (off until switched on).
 +    public static let poppies = GGSetting<Bool>("appearance.theme.poppies", default: false)
 +    /// %, 20…100: how visible the poppies, the pink tint and the edge flowers are.
++    /// Umbra: chats you were kicked from stay in the list with their saved messages (mirrored to UserDefaults for TelegramCore).
++    public static let keepKicked = GGSetting<Bool>("appearance.umbra.keepKicked", default: true)
 +    public static let poppyOpacity = GGSetting<Double>("appearance.theme.poppyOpacity", default: 100.0)
      public static let hideSeparators = GGSetting<Bool>("appearance.theme.hideSeparators", default: false)
      /// %, 0…100; 100 = the server's colors.
      public static let nameColorSaturation = GGSetting<Double>("appearance.theme.nameSaturation", default: 100.0)
-@@ -162,6 +166,8 @@
+@@ -162,6 +168,9 @@
          let _ = GGAppearanceSettings.amoled
          let _ = GGAppearanceSettings.amoledKeyboard
          let _ = GGAppearanceSettings.msnTheme
 +        let _ = GGAppearanceSettings.poppies
 +        let _ = GGAppearanceSettings.poppyOpacity
++        let _ = GGAppearanceSettings.keepKicked
          let _ = GGAppearanceSettings.hideSeparators
          let _ = GGAppearanceSettings.nameColorSaturation
          let _ = GGAppearanceSettings.edgeStyle
 --- a/Ghostgram/Features/Appearance/Sources/Menu/GGAppearanceMenu.swift
 +++ b/Ghostgram/Features/Appearance/Sources/Menu/GGAppearanceMenu.swift
-@@ -309,6 +309,8 @@
+@@ -309,6 +309,9 @@
          GGMenuRegistry.register(GGMenuRow(id: "appearance.theme.amoled", section: main, order: 100, title: { GGStrings.Appearance.Theme.amoled }, subtitle: { GGStrings.Appearance.Theme.amoledInfo }, kind: .toggle(.global(GGAppearanceSettings.amoled)), searchKeywords: { [GGStrings.Appearance.Theme.amoledKeywords] }))
          GGMenuRegistry.register(GGMenuRow(id: "appearance.theme.amoledKeyboard", section: main, order: 200, title: { GGStrings.Appearance.Theme.amoledKeyboard }, subtitle: { GGStrings.Appearance.Theme.amoledKeyboardInfo }, kind: .toggle(.global(GGAppearanceSettings.amoledKeyboard))))
          GGMenuRegistry.register(GGMenuRow(id: "appearance.theme.msn", section: main, order: 250, title: { "MSN Messenger" }, subtitle: { "Небесно-голубое оформление в духе MSN Messenger 2005 (для светлой темы)" }, kind: .toggle(.global(GGAppearanceSettings.msnTheme))))
 +        GGMenuRegistry.register(GGMenuRow(id: "appearance.theme.poppies", section: main, order: 260, title: { "Маки" }, subtitle: { "Розовые маки падают по всему экрану. Нажимай на них: три пойманных собираются в корзинке в букет" }, kind: .toggle(.global(GGAppearanceSettings.poppies))))
 +        GGMenuRegistry.register(GGMenuRow(id: "appearance.theme.poppyOpacity", section: main, order: 270, title: { "Прозрачность маков" }, kind: .slider(.global(GGAppearanceSettings.poppyOpacity), range: 20.0 ... 100.0, step: 10.0, format: GGAppearanceMenu.percent)))
++        GGMenuRegistry.register(GGMenuRow(id: "appearance.theme.keepKicked", section: main, order: 280, title: { "Хранить чаты, откуда кикнули" }, subtitle: { "Чат остаётся в списке с уже сохранёнными сообщениями" }, kind: .toggle(.global(GGAppearanceSettings.keepKicked))))
          GGMenuRegistry.register(GGMenuRow(id: "appearance.theme.hideSeparators", section: main, order: 300, title: { GGStrings.Appearance.Theme.hideSeparators }, kind: .toggle(.global(GGAppearanceSettings.hideSeparators))))
          GGMenuRegistry.register(GGMenuRow(id: "appearance.theme.nameSaturation", section: main, order: 400, title: { GGStrings.Appearance.Theme.nameSaturation }, subtitle: { GGStrings.Appearance.Theme.nameSaturationInfo }, kind: .slider(.global(GGAppearanceSettings.nameColorSaturation), range: 0.0 ... 100.0, step: 5.0, format: GGAppearanceMenu.percent)))
  
@@ -43,7 +47,7 @@
          GGAppearanceMenu.register()
 --- /dev/null
 +++ b/Ghostgram/Features/Appearance/Sources/Chat/UmbraPoppies.swift
-@@ -0,0 +1,323 @@
+@@ -0,0 +1,325 @@
 +import Foundation
 +import UIKit
 +import GGAppearanceSettings
@@ -346,6 +350,8 @@
 +    }
 +
 +    private static func sync() {
++        // TelegramCore cannot see the settings module: it reads this mirrored flag.
++        UserDefaults.standard.set(GGAppearanceSettings.keepKicked.value, forKey: "umbra.keepKicked")
 +        let enabled = GGAppearanceSettings.poppies.value
 +        if enabled {
 +            if let overlay = self.overlay, overlay.superview != nil {

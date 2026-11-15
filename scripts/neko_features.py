@@ -436,4 +436,9 @@ edit(settings, "        var id = item.id;\n        if (id == tabletModeRow) {",
             }
         } else if (id == tabletModeRow) {""")
 
+# A kept chat opens with its saved messages instead of a "can't open this chat" dialog.
+chat_activity = "TMessagesProj/src/main/java/org/telegram/ui/ChatActivity.java"
+edit(chat_activity, "                int reason = (Integer) args[1];\n                if (getParentActivity() == null || closeChatDialog != null) {",
+     "                int reason = (Integer) args[1];\n                if (app.umbra.KeepKicked.keep(currentChat)) {\n                    loading = false;\n                    showProgressView(false);\n                    return;\n                }\n                if (getParentActivity() == null || closeChatDialog != null) {")
+
 print("features applied")
