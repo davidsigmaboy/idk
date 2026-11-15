@@ -1,3 +1,4 @@
+# Umbra - Copyright (c) 2026 Anonymous Author. Grumpy Anonymous Author-First Source-Available Noncommercial License, see LICENSE.md and NOTICE.md.
 class BulletinHelper:
     """Toasts: forwarded to the host (shown natively in Umbra)."""
     _sink = staticmethod(lambda kind, text: None)

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Umbra - Copyright (c) 2026 Anonymous Author. Grumpy Anonymous Author-First Source-Available Noncommercial License, see LICENSE.md and NOTICE.md.
 """Replaces every app icon of the Ghostgram tree with branding/icon.jpg (same pixel sizes as the originals).
 
 usage: branding.py <ghostgram-root> <icon.jpg>

@@ -1,3 +1,4 @@
+# Umbra - Copyright (c) 2026 Anonymous Author. Grumpy Anonymous Author-First Source-Available Noncommercial License, see LICENSE.md and NOTICE.md.
 """exteraGram `client_utils`: only what has an equivalent in Umbra."""
 import threading
 from typing import Any, Callable

@@ -17,4 +17,10 @@ Unofficial Telegram client (official Telegram API): iOS (rebranded Ghostgram for
 - Full auth flow (phone, code, 2FA, registration, email)
 - Connection status, logout, chat history pagination
 
-GPL v2 (like Telegram iOS). Not affiliated with Telegram.
+## License
+
+Umbra's own code: [Grumpy Anonymous Author-First Source-Available Noncommercial License](LICENSE.md). Third-party projects keep their own licences (Ghostgram and Nekogram: GPL v2, tweb: GPL v3, and others). See [NOTICE.md](NOTICE.md) for what is covered by what.
+
+Based on Umbra by Anonymous Author, licensed under the Grumpy Anonymous Author-First Source-Available Noncommercial License.
+
+Not affiliated with Telegram.

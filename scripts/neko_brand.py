@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Umbra - Copyright (c) 2026 Anonymous Author. Grumpy Anonymous Author-First Source-Available Noncommercial License, see LICENSE.md and NOTICE.md.
 """Turns a Nekogram checkout into the Umbra Android client (interface of Nekogram, Umbra's name and keys).
 Usage: neko_brand.py <nekogram-dir> <api_id> <api_hash> <keystore> <store_pass> <build_number>
 Every edit asserts that it found its target, so an upstream change fails loudly instead of silently."""

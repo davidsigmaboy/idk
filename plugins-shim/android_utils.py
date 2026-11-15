@@ -1,3 +1,4 @@
+# Umbra - Copyright (c) 2026 Anonymous Author. Grumpy Anonymous Author-First Source-Available Noncommercial License, see LICENSE.md and NOTICE.md.
 """exteraGram `android_utils`: UI-thread helpers become plain calls; logging goes to the host log."""
 import logging
 

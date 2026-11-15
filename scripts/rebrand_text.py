@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Umbra - Copyright (c) 2026 Anonymous Author. Grumpy Anonymous Author-First Source-Available Noncommercial License, see LICENSE.md and NOTICE.md.
 """Replaces the visible name Ghostgram with Umbra in the iOS .strings resources (app name, permission texts).
 usage: rebrand_text.py <ghostgram-root>
 """

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Umbra - Copyright (c) 2026 Anonymous Author. Grumpy Anonymous Author-First Source-Available Noncommercial License, see LICENSE.md and NOTICE.md.
 """Umbra features for the Nekogram-based Android client. Usage: neko_features.py <nekogram-dir>
 Every edit asserts that it found its target."""
 import pathlib, sys
