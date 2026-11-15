@@ -51,6 +51,7 @@ jobs:
           docker run --rm --platform linux/arm64 -v "$PWD":/work -v "$PWD/tweb/dist":/web:ro -v "$PWD/out":/out alpine:3.22 sh /work/iso/build-iso.sh
           ls -la out
           test -n "$(ls out/*.iso)"
+          sudo chown -R "$(id -u):$(id -g)" out
           mv out/*.iso out/Umbra-aarch64.iso
 
       - name: Boot test in QEMU (software emulation) and read the screen
