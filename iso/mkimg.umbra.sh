@@ -7,7 +7,7 @@ profile_umbra() {
 	arch="aarch64"
 	output_format="iso"
 	kernel_flavors="lts"
-	kernel_cmdline="console=tty0 console=ttyAMA0,115200"
+	kernel_cmdline="unionfs_size=1G console=tty0 console=ttyAMA0,115200"
 	apks="$apks chromium cage seatd mesa-dri-gallium mesa-egl mesa-gles mesa-gbm eudev dbus libinput
 		font-dejavu font-noto-emoji python3 openssl ca-certificates agetty doas"
 	local _k _a

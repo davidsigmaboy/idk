@@ -39,9 +39,9 @@ doas
 WORLD
 chmod 0755 "$tmp"/usr/local/bin/* "$tmp"/etc/local.d/*
 
-for s in devfs dmesg mdev; do rc_add "$s" sysinit; done
-for s in hwclock modules sysctl hostname bootmisc syslog; do rc_add "$s" boot; done
-for s in udev udev-trigger; do rc_add "$s" sysinit; done
+for s in devfs dmesg udev udev-trigger hwdrivers modloop; do rc_add "$s" sysinit; done
+for s in modules sysctl hostname bootmisc syslog; do rc_add "$s" boot; done
+rc_add udev-postmount default
 for s in networking dbus seatd local; do rc_add "$s" default; done
 for s in mount-ro killprocs savecache; do rc_add "$s" shutdown; done
 
