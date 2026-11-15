@@ -5,7 +5,8 @@ adduser -D build
 addgroup build abuild
 echo "build ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/build
 su build -c "abuild-keygen -a -i -n" || true
-su build -c "git clone --depth 1 --branch 3.22-stable https://gitlab.alpinelinux.org/alpine/aports.git /home/build/aports"
+set -e
+su build -c "git clone --depth 1 --branch 3.22-stable https://github.com/alpinelinux/aports.git /home/build/aports"
 cp /work/iso/mkimg.umbra.sh /home/build/aports/scripts/
 cp /work/iso/genapkovl-umbra.sh /home/build/aports/scripts/
 chown build /home/build/aports/scripts/mkimg.umbra.sh /home/build/aports/scripts/genapkovl-umbra.sh
@@ -14,4 +15,5 @@ su build -c "cd /home/build/aports/scripts && UMBRA_OVERLAY=/work/iso/overlay UM
   --tag umbra --outdir /out --arch aarch64 --profile umbra --workdir /home/build/work \
   --repository https://dl-cdn.alpinelinux.org/alpine/v3.22/main \
   --repository https://dl-cdn.alpinelinux.org/alpine/v3.22/community"
+test -n "$(ls /out/*.iso)"
 ls -la /out
