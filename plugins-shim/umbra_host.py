@@ -1,4 +1,4 @@
-# Umbra - Copyright (c) 2026 Anonymous Author. Grumpy Anonymous Author-First Source-Available Noncommercial License, see LICENSE.md and NOTICE.md.
+# Umbra - Copyright (c) 2026. Non-Commercial Source-Available License (NCSAL) v1.0, see LICENSE.md and NOTICE.md.
 """Umbra plugin host: loads exteraGram `.plugin` files and dispatches hooks to them.
 
 The app talks to it with JSON only:  handle(json_str) -> json_str  (see `Host.handle`).

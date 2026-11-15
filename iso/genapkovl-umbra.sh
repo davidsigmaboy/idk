@@ -1,5 +1,5 @@
 #!/bin/sh -e
-# Umbra - Copyright (c) 2026 Anonymous Author. Grumpy Anonymous Author-First Source-Available Noncommercial License, see LICENSE.md and NOTICE.md.
+# Umbra - Copyright (c) 2026. Non-Commercial Source-Available License (NCSAL) v1.0, see LICENSE.md and NOTICE.md.
 # Builds the overlay that turns the Alpine live system into the Umbra kiosk.
 # UMBRA_OVERLAY: iso/overlay, UMBRA_WEB: the built web client (both set by build-iso.sh).
 HOSTNAME="$1"

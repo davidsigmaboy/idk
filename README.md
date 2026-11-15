@@ -19,8 +19,8 @@ Unofficial Telegram client (official Telegram API): iOS (rebranded Ghostgram for
 
 ## License
 
-Umbra's own code: [Grumpy Anonymous Author-First Source-Available Noncommercial License](LICENSE.md). Third-party projects keep their own licences (Ghostgram and Nekogram: GPL v2, tweb: GPL v3, and others). See [NOTICE.md](NOTICE.md) for what is covered by what.
+Umbra's own code: [Non-Commercial Source-Available License (NCSAL) v1.0](LICENSE.md). Third-party projects keep their own licences (Ghostgram and Nekogram: GPL v2, tweb: GPL v3, and others). See [NOTICE.md](NOTICE.md) for what is covered by what.
 
-Based on Umbra by Anonymous Author, licensed under the Grumpy Anonymous Author-First Source-Available Noncommercial License.
+Based on Umbra, licensed under the NCSAL.
 
 Not affiliated with Telegram.
