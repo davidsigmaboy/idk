@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Umbra - Copyright (c) 2026. Non-Commercial Source-Available License (NCSAL) v1.0, see LICENSE.md and NOTICE.md.
+# Umbra - PolyForm Noncommercial License 1.0.0, see LICENSE.md and NOTICE.md.
 """Umbra features for the Nekogram-based Android client. Usage: neko_features.py <nekogram-dir>
 Every edit asserts that it found its target."""
 import pathlib, sys

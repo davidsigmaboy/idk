@@ -1,5 +1,5 @@
 #!/bin/sh -e
-# Umbra - Copyright (c) 2026. Non-Commercial Source-Available License (NCSAL) v1.0, see LICENSE.md and NOTICE.md.
+# Umbra - PolyForm Noncommercial License 1.0.0, see LICENSE.md and NOTICE.md.
 # Runs inside an Alpine aarch64 container. /work = the repository, /web = the built client, /out = result.
 apk add --no-cache alpine-sdk alpine-conf xorriso squashfs-tools grub grub-efi mtools dosfstools sudo git
 adduser -D build

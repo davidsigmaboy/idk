@@ -1,4 +1,4 @@
-# Umbra - Copyright (c) 2026. Non-Commercial Source-Available License (NCSAL) v1.0, see LICENSE.md and NOTICE.md.
+# Umbra - PolyForm Noncommercial License 1.0.0, see LICENSE.md and NOTICE.md.
 """exteraGram `base_plugin` API, re-implemented for Umbra (subset used by most plugins)."""
 import logging
 from enum import Enum

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Umbra - Copyright (c) 2026. Non-Commercial Source-Available License (NCSAL) v1.0, see LICENSE.md and NOTICE.md.
+# Umbra - PolyForm Noncommercial License 1.0.0, see LICENSE.md and NOTICE.md.
 """Serves the Umbra web client on 127.0.0.1:8080.
 The client is built with placeholder Telegram API credentials; this server swaps them for the ones the
 person typed on the first screen, in memory, so no key is ever stored inside the ISO."""

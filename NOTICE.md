@@ -2,7 +2,7 @@
 
 Umbra is a mix of **our own code** and **other people's projects**. Each part keeps its own licence.
 
-## 1. Ours: the Non-Commercial Source-Available License (NCSAL) v1.0
+## 1. Ours: the PolyForm Noncommercial License 1.0.0
 
 Covered by [LICENSE.md](LICENSE.md) (marked with a header in the file where a header is possible):
 
@@ -14,11 +14,11 @@ Covered by [LICENSE.md](LICENSE.md) (marked with a header in the file where a he
 - `branding/`: the Umbra logo and icons
 - Our original new files that the patches add, such as `UmbraBanners.swift`, `UmbraPoppies.swift`, `UmbraPoppies.java` and `KeepKicked.java`. These are ours, **but see section 2 below.**
 
-Credit line (LICENSE.md §3): *Based on Umbra, licensed under the NCSAL.*
+Anyone who gets a copy must also get the licence text or its URL (https://polyformproject.org/licenses/noncommercial/1.0.0).
 
 ## 2. Our code inside other people's GPL projects
 
-The `patches/` files, and the new files our CI adds to Ghostgram / Nekogram, become part of a GPL work when they are built into the iOS app, the Android app or the ISO. For **those combined builds** the GPL applies to the whole build, and that is the only way they are distributed. Hunks of a patch that edit an existing upstream file are derived from that file and stay under its licence. This does not change what LICENSE.md says about the rest of the repository. LICENSE.md does not itself mention third-party code; this notice is where it is stated that those parts keep their own licences.
+The `patches/` files, and the new files our CI adds to Ghostgram / Nekogram, become part of a GPL work when they are built into the iOS app, the Android app or the ISO. For **those combined builds** the GPL applies to the whole build, and that is the only way they are distributed. Hunks of a patch that edit an existing upstream file are derived from that file and stay under its licence. This does not change what LICENSE.md says about the rest of the repository. The licence does not itself mention third-party code; this notice is where it is stated that those parts keep their own licences.
 
 ## 3. Not ours, and not stored in this repository
 

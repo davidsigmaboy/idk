@@ -1,4 +1,4 @@
-# Umbra - Copyright (c) 2026. Non-Commercial Source-Available License (NCSAL) v1.0, see LICENSE.md and NOTICE.md.
+# Umbra - PolyForm Noncommercial License 1.0.0, see LICENSE.md and NOTICE.md.
 class BulletinHelper:
     """Toasts: forwarded to the host (shown natively in Umbra)."""
     _sink = staticmethod(lambda kind, text: None)
