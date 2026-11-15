@@ -1,0 +1,9 @@
+#!/bin/sh
+# Runs at boot: the kiosk user and the local web server.
+adduser -D -s /bin/sh umbra 2>/dev/null
+for g in video input audio seat; do addgroup umbra "$g" 2>/dev/null; done
+passwd -d umbra >/dev/null 2>&1
+mkdir -p /home/umbra/.config/umbra
+chown -R umbra:umbra /home/umbra
+su umbra -c "python3 /usr/local/bin/umbra-server.py" >/var/log/umbra-server.log 2>&1 &
+echo "UMBRA-READY (server started)" > /dev/console

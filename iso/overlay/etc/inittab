@@ -1,0 +1,7 @@
+::sysinit:/sbin/openrc sysinit
+::sysinit:/sbin/openrc boot
+::wait:/sbin/openrc default
+tty1::respawn:/sbin/getty -n -l /usr/local/bin/umbra-session 38400 tty1
+tty2::respawn:/sbin/getty 38400 tty2
+::ctrlaltdel:/sbin/reboot
+::shutdown:/sbin/openrc shutdown

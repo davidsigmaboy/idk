@@ -1,0 +1,2 @@
+#!/bin/sh
+exec su -l umbra -c /usr/local/bin/umbra-kiosk

@@ -1,0 +1,93 @@
+name: Umbra ISO (ARM, for UTM)
+
+on:
+  workflow_dispatch:   # manual only
+
+permissions:
+  contents: write
+
+jobs:
+  iso:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 120
+    env:
+      TWEB_SHA: 2e4bbb52b6aec5e95ee32e5c2882c1f05de32200
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with: { node-version: 24 }
+
+      - name: Fetch the web client (tweb)
+        run: |
+          git clone --filter=blob:none https://github.com/morethanwords/tweb.git tweb
+          git -C tweb checkout "$TWEB_SHA"
+
+      - name: Build the web client with placeholder API keys
+        working-directory: tweb
+        env:
+          VITE_API_ID: "90000001"
+          VITE_API_HASH: "umbra00000000000000000000000000x"
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+          pnpm exec vite build
+          ls dist | head
+          python3 - <<'PY'
+          import pathlib
+          p = pathlib.Path("dist/index.html")
+          s = p.read_text()
+          s = s.replace("<title>Telegram Web</title>", "<title>Umbra</title>")
+          p.write_text(s)
+          PY
+          # the placeholders must be in the bundle, or the first-boot key swap would do nothing
+          grep -rl "90000001" dist | head -3
+          grep -rl "umbra00000000000000000000000000x" dist | head -3
+          test -n "$(grep -rl 90000001 dist)" && test -n "$(grep -rl umbra00000000000000000000000000x dist)"
+
+      - name: Build the ISO (Alpine aarch64)
+        run: |
+          mkdir -p out
+          docker run --rm --platform linux/arm64 -v "$PWD":/work -v "$PWD/tweb/dist":/web:ro -v "$PWD/out":/out alpine:3.22 sh /work/iso/build-iso.sh
+          ls -la out
+          test -n "$(ls out/*.iso)"
+          mv out/*.iso out/Umbra-aarch64.iso
+
+      - name: Boot test in QEMU (software emulation) and read the screen
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq qemu-system-arm qemu-efi-aarch64 tesseract-ocr imagemagick
+          cp /usr/share/AAVMF/AAVMF_VARS.fd vars.fd 2>/dev/null || dd if=/dev/zero of=vars.fd bs=1M count=64
+          (
+            sleep 420
+            echo "screendump shot.ppm"; sleep 3
+            echo "quit"
+          ) | qemu-system-aarch64 -M virt -cpu max -smp 4 -m 3072 \
+            -drive if=pflash,format=raw,readonly=on,file=/usr/share/AAVMF/AAVMF_CODE.fd \
+            -drive if=pflash,format=raw,file=vars.fd \
+            -cdrom out/Umbra-aarch64.iso -boot d \
+            -device virtio-gpu-pci -device qemu-xhci -device usb-kbd -device usb-mouse \
+            -netdev user,id=n0 -device virtio-net-pci,netdev=n0 \
+            -serial file:serial.log -display none -monitor stdio || true
+          echo "--- serial log (tail) ---"; tail -n 40 serial.log || true
+          if [ -f shot.ppm ]; then
+            convert shot.ppm shot.png
+            TEXT="$(tesseract shot.png - 2>/dev/null | tr '\n' ' ' | cut -c1-300)"
+            echo "screen text: $TEXT"
+            echo "::notice title=Boot screen::$TEXT"
+          else
+            echo "::warning title=Boot test::no screenshot was taken"
+          fi
+          grep -a "UMBRA-READY" serial.log && echo "::notice title=Boot test::system booted, server started" || echo "::warning title=Boot test::UMBRA-READY marker not seen on serial console"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Umbra-iso
+          path: out/Umbra-aarch64.iso
+          compression-level: 0
+
+      - name: Publish a release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "iso-${GITHUB_RUN_NUMBER}" out/Umbra-aarch64.iso --title "Umbra ISO ${GITHUB_RUN_NUMBER}" --notes "ARM64 live ISO for UTM: boots into a full-screen Umbra (Telegram Web K). On first start it asks for your own Telegram api_id and api_hash." --prerelease
